@@ -9,6 +9,7 @@ Son çalışma tarihleri veritabanında tutulur; süreç yeniden başlasa bile a
 from __future__ import annotations
 
 import logging
+import os
 import time
 import traceback
 from datetime import datetime, time as dtime, timedelta
@@ -23,11 +24,18 @@ MORNING_AT = dtime(9, 45)
 EVENING_AT = dtime(19, 0)
 EVENING_GIVE_UP = dtime(22, 0)
 EVENING_RETRY = timedelta(minutes=30)
+BACKUP_KEEP = 14
 
 
 class Daemon:
-    def __init__(self, runner: LiveRunner, notifier, tz: str = "Europe/Istanbul", now=None):
+    def __init__(self, runner: LiveRunner, notifier, tz: str = "Europe/Istanbul", now=None,
+                 evening_offset_min: int = 0, heartbeat_file: str | None = None, backup_dir: str | None = None):
         self.runner = runner
+        # Aynı VPS'teki birden çok bot Yahoo'ya aynı anda gitmesin: akşam işi birkaç dakika kaydırılabilir.
+        self.evening_at = (datetime.combine(datetime.today(), EVENING_AT)
+                           + timedelta(minutes=evening_offset_min)).time()
+        self.heartbeat_file = heartbeat_file
+        self.backup_dir = backup_dir
         self.notifier = notifier
         self.tz = ZoneInfo(tz)
         self._now = now or (lambda: datetime.now(self.tz))
@@ -44,11 +52,11 @@ class Daemon:
         today = now.date().isoformat()
         if now.weekday() >= 5:
             return
-        if now.time() >= MORNING_AT and now.time() < EVENING_AT and self._state("morning_done") != today:
+        if now.time() >= MORNING_AT and now.time() < self.evening_at and self._state("morning_done") != today:
             self.db.set_state("morning_done", today)
             self.notifier.send(f"☀️ Günaydın, bot çalışıyor ({now:%d.%m.%Y %H:%M}).\n"
                                + self.runner.pending_preview())
-        if EVENING_AT <= now.time() <= EVENING_GIVE_UP and self._state("evening_done") != today:
+        if self.evening_at <= now.time() <= EVENING_GIVE_UP and self._state("evening_done") != today:
             last_try = self._state("evening_last_try")
             if last_try and now - datetime.fromisoformat(last_try) < EVENING_RETRY:
                 return
@@ -70,6 +78,35 @@ class Daemon:
         self.db.set_state("evening_done", now.date().isoformat())
         if res.status == "ok":
             self.notifier.send(res.message + "\n\n" + "\n\n".join(res.sections))
+            self.backup(now)
+
+    # ------------------------------------------------------------------ bakım
+    def backup(self, now: datetime) -> str | None:
+        """Akşam işinden sonra veritabanının tutarlı bir kopyasını alır; son BACKUP_KEEP kopya saklanır."""
+        if not self.backup_dir:
+            return None
+        import sqlite3
+        os.makedirs(self.backup_dir, exist_ok=True)
+        path = os.path.join(self.backup_dir, f"davidfinch-{now:%Y%m%d}.db")
+        try:
+            dst = sqlite3.connect(path)
+            with dst:
+                self.db.conn.backup(dst)
+            dst.close()
+            files = sorted(f for f in os.listdir(self.backup_dir) if f.startswith("davidfinch-"))
+            for old in files[:-BACKUP_KEEP]:
+                os.remove(os.path.join(self.backup_dir, old))
+            return path
+        except Exception:
+            log.exception("Yedekleme başarısız")
+            self.notifier.send("⚠️ Günlük veritabanı yedeği alınamadı (loglara bakın).")
+            return None
+
+    def heartbeat(self) -> None:
+        """Docker sağlık kontrolü bu dosyanın güncelliğine bakar."""
+        if self.heartbeat_file:
+            with open(self.heartbeat_file, "w") as fh:
+                fh.write(self._now().isoformat())
 
     # ------------------------------------------------------------------ döngü
     def handle_updates(self, poll_timeout: int = 20) -> None:
@@ -80,6 +117,7 @@ class Daemon:
         self.notifier.send("🤖 davidfinch paper bot başladı. /yardim")
         while True:
             try:
+                self.heartbeat()
                 self.tick()
                 self.handle_updates()
             except KeyboardInterrupt:

@@ -1,0 +1,38 @@
+# Her bot ayrı bir servis: kendi ayarı, veritabanı, .env'i (Telegram token'ı) ve kendi klasörü.
+# Yeni bot eklemek için:  ./deploy/new-bot.sh <ad> <akşam-gecikmesi-dakika>
+# ve aşağıdaki "momentum" bloğunu kopyalayıp adları değiştirin.
+
+x-bot: &bot
+  build: .
+  image: davidfinch:latest
+  restart: unless-stopped        # çökerse veya VPS yeniden başlarsa otomatik kalkar
+  mem_limit: 900m                # 3 GB RAM'li VPS'te 2-3 bot sığsın
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }   # log dönüşümü
+
+services:
+  momentum:
+    <<: *bot
+    container_name: davidfinch-momentum
+    env_file: bots/momentum/.env
+    environment:
+      TZ: Europe/Istanbul
+      DAVIDFINCH_SETTINGS: /app/bots/momentum/settings.yaml
+      DAVIDFINCH_DB: /app/bots/momentum/data/davidfinch.db
+      EVENING_OFFSET_MIN: "0"     # ikinci bot için 10, üçüncü için 20 ... (Yahoo'ya aynı anda gitmesinler)
+    volumes:
+      - ./bots/momentum:/app/bots/momentum
+
+  # ikinci bot örneği (açmak için yorum işaretlerini kaldırın):
+  # momentum-risk2:
+  #   <<: *bot
+  #   container_name: davidfinch-momentum-risk2
+  #   env_file: bots/momentum-risk2/.env
+  #   environment:
+  #     TZ: Europe/Istanbul
+  #     DAVIDFINCH_SETTINGS: /app/bots/momentum-risk2/settings.yaml
+  #     DAVIDFINCH_DB: /app/bots/momentum-risk2/data/davidfinch.db
+  #     EVENING_OFFSET_MIN: "10"
+  #   volumes:
+  #     - ./bots/momentum-risk2:/app/bots/momentum-risk2

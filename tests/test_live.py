@@ -204,3 +204,20 @@ def test_telegram_ignores_unauthorized_chats():
 def test_telegram_requires_config():
     with pytest.raises(ValueError):
         Telegram("", "")
+
+
+def test_daemon_offset_heartbeat_and_backup(setup, tmp_path):
+    runner, _, days, db = setup
+    day = days[300]
+    clock = Clock(datetime(day.year, day.month, day.day, 19, 5, tzinfo=TZ))
+    note = ConsoleNotifier()
+    d = Daemon(runner, note, now=clock, evening_offset_min=10,
+               heartbeat_file=str(tmp_path / "hb"), backup_dir=str(tmp_path / "bk"))
+    d.tick()
+    assert not any("gün sonu" in m for m in note.sent)      # 19:10'dan önce akşam işi yok
+    clock.dt = clock.dt.replace(minute=12)
+    d.tick()
+    assert any("gün sonu" in m for m in note.sent)
+    assert len(list((tmp_path / "bk").iterdir())) == 1
+    d.heartbeat()
+    assert (tmp_path / "hb").read_text().startswith(str(day.year))

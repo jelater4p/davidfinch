@@ -12,9 +12,11 @@ geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 | 3 | Walk-forward + aylık öğrenme | ✅ |
 | 4 | KAP + Claude filtresi | ✅ (KAP bağlantısı VPS'te doğrulanacak) |
 | 5 | Telegram bot + zamanlayıcı + canlı paper akışı | ✅ |
-| 6 | Docker + VPS kurulumu | ⏳ |
+| 6 | Docker + VPS kurulumu ([DEPLOY.md](DEPLOY.md)) | ✅ |
 
 ## Kurulum
+
+VPS'e kurulum için: **[DEPLOY.md](DEPLOY.md)**. Geliştirme ortamı için:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -121,5 +123,5 @@ Bot sadece `TELEGRAM_CHAT_ID` sohbetinden gelen komutlara cevap verir.
 
 ## Bilinen sınırlamalar
 
-- `data/bist100.txt` yaklaşık bir listedir; güncel endeks bileşimiyle doğrulanmalı.
+- `universes/bist100.txt` yaklaşık bir listedir; güncel endeks bileşimiyle doğrulanmalı.
 - Bugünkü listeyle geçmişe dönük test hayatta kalma yanlılığı (survivorship bias) içerir.
