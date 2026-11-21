@@ -49,13 +49,15 @@ class DayResult:
 
 class Engine:
     def __init__(self, broker: PaperBroker, settings: Settings, strategy: Strategy,
-                 rows: Rows, news_filter: NewsFilter | None = None, sizing: str | None = None):
+                 rows: Rows, news_filter: NewsFilter | None = None, sizing: str | None = None,
+                 allow_entries: bool = True):
         self.broker = broker
         self.settings = settings
         self.strategy = strategy
         self.rows = rows
         self.news_filter = news_filter
         self.sizing = sizing or settings.sizing
+        self.allow_entries = allow_entries   # False: /durdur — yeni alım yok, stop ve çıkışlar çalışır
         self.last_close: dict[str, float] = {}   # işlem görmeyen günlerde son bilinen fiyat
 
     def run_day(self, day: date) -> DayResult:
@@ -94,7 +96,8 @@ class Engine:
         open_count = len(positions) - len(exits) + len(pending)
 
         sizer = size_equal_weight if self.sizing == "equal_weight" else size_position
-        for sig in self.strategy.entry_signals(day, today, busy):
+        signals = self.strategy.entry_signals(day, today, busy) if self.allow_entries else []
+        for sig in signals:
             if open_count >= self.settings.risk.max_open_positions:
                 break
             news: dict[str, Any] | None = None

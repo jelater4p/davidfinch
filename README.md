@@ -11,7 +11,7 @@ geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 | 2 | Strateji, gerekçe kartı, backtest | ✅ |
 | 3 | Walk-forward + aylık öğrenme | ✅ |
 | 4 | KAP + Claude filtresi | ✅ (KAP bağlantısı VPS'te doğrulanacak) |
-| 5 | Telegram bot + zamanlayıcı | ⏳ |
+| 5 | Telegram bot + zamanlayıcı + canlı paper akışı | ✅ |
 | 6 | Docker + VPS kurulumu | ⏳ |
 
 ## Kurulum
@@ -34,6 +34,9 @@ python -m bot walkforward --start 2022-01-01   # aylık öğrenmeyi geçmişte s
 python -m bot learn           # aylık parametre güncellemesi (canlı paper)
 python -m bot kap-check       # KAP bağlantı/biçim teşhisi (VPS'te bir kez)
 python -m bot news THYAO      # hissenin son bildirimleri + Claude analizi
+python -m bot evening --date 2026-11-20   # akşam işini elle çalıştır (test/onarım)
+python -m bot telegram-test   # Telegram bağlantısını dene
+python -m bot run             # sürekli çalışan bot (VPS'te bu çalışır)
 pytest                        # testler
 ```
 
@@ -84,6 +87,21 @@ sabit parametreli sonuçla kıyaslar.
 - Geçmiş bildirim verisi olmadığı için filtre backtest'e dahil değildir.
 - Claude API anahtarı `.env` içindeki `ANTHROPIC_API_KEY` değişkeninden okunur.
 
+## Canlı paper akışı (`bot/live/`)
+
+`python -m bot run` sürekli çalışır (Europe/Istanbul, hafta içi):
+- **09:45** sabah mesajı: bot çalışıyor + o gün açılışta gerçekleşecek emirler.
+- **19:00** akşam işi. Kapanış verisi gelmemişse 22:00'a kadar 30 dakikada bir tekrar dener.
+  1. Veri yenilenir. Elde tutulan hissede bedelsiz/bölünme varsa lot, maliyet ve stop uyarlanır.
+  2. Ay başıysa frenli parametre güncellemesi yapılır.
+  3. Bekleyen emirler bugünün açılış fiyatından dolar, stop'lar bugünün en düşüğüyle kontrol edilir.
+  4. Ertesi günün kararları KAP filtresiyle verilir; gerekçe kartları ve gün sonu raporu Telegram'a gider.
+- Kaçırılan işlem günleri (VPS kapalı kaldıysa) sırayla işlenir. Aynı gün iki kez işlenmez.
+
+Telegram komutları: `/portfoy`, `/neden HISSE`, `/bekleyen`, `/islemler`, `/performans`,
+`/parametreler`, `/haber HISSE`, `/durdur` (yeni alım yok; stop/çıkış çalışır), `/devam`, `/yardim`.
+Bot sadece `TELEGRAM_CHAT_ID` sohbetinden gelen komutlara cevap verir.
+
 ## Sabit risk kuralları (`settings.yaml` → `risk`)
 
 - Başlangıç sermayesi 100.000 TL
@@ -105,4 +123,3 @@ sabit parametreli sonuçla kıyaslar.
 
 - `data/bist100.txt` yaklaşık bir listedir; güncel endeks bileşimiyle doğrulanmalı.
 - Bugünkü listeyle geçmişe dönük test hayatta kalma yanlılığı (survivorship bias) içerir.
-- Paper pozisyon taşınırken bedelsiz/bölünme olursa lot ayarlaması henüz yok (2. aşamada).

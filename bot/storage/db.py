@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS equity_snapshots (
     equity REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bot_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS param_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     effective_date TEXT NOT NULL,
@@ -126,6 +132,18 @@ class Database:
 
     def query_one(self, sql: str, params: tuple | dict = ()) -> sqlite3.Row | None:
         return self.conn.execute(sql, params).fetchone()
+
+    def get_state(self, key: str, default: str | None = None) -> str | None:
+        row = self.query_one("SELECT value FROM bot_state WHERE key = ?", (key,))
+        return default if row is None else row["value"]
+
+    def set_state(self, key: str, value: str) -> None:
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT INTO bot_state (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+                (key, value),
+            )
 
     def close(self) -> None:
         self.conn.close()

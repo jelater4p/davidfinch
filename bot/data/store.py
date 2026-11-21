@@ -64,3 +64,19 @@ class PriceStore:
 
     def symbols(self) -> list[str]:
         return [r["symbol"] for r in self.db.query("SELECT DISTINCT symbol FROM prices ORDER BY symbol")]
+
+
+SPLIT_THRESHOLD = 0.10   # %10'dan büyük geriye dönük fiyat değişimi = bölünme/bedelsiz (temettü düzeltmeleri küçüktür)
+
+
+def detect_adjustment(old: pd.DataFrame, new: pd.DataFrame) -> float | None:
+    """Yeni çekilen (düzeltilmiş) geçmiş, eskisine göre topluca ölçeklenmiş mi?
+
+    Ortak tarihlerdeki kapanış oranlarının medyanı (yeni / eski) döner; anlamlı bir
+    değişim yoksa None. Örn. %100 bedelsizde ≈ 0.5.
+    """
+    common = old.index.intersection(new.index)
+    if len(common) < 5:
+        return None
+    ratio = (new.loc[common, "close"] / old.loc[common, "close"]).median()
+    return float(ratio) if abs(1 - ratio) > SPLIT_THRESHOLD else None
