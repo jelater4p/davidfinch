@@ -68,6 +68,16 @@ class MomentumConfig:
     atr_period: int = 14
 
 
+@dataclass(frozen=True)
+class NewsConfig:
+    enabled: bool = True
+    source: str = "kap_web"        # ileride: matriks
+    lookback_days: int = 7
+    min_confidence: float = 0.6
+    model: str = "claude-opus-5-5"
+    effort: str = "low"
+
+
 SIZING_MODES = ("equal_weight", "risk")
 
 
@@ -85,6 +95,7 @@ class Settings:
     sizing: str = "risk"   # equal_weight: her hisseye portföy/max_open_positions; risk: %risk/stop
     pullback: StrategyConfig = field(default_factory=StrategyConfig)
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
+    news: NewsConfig = field(default_factory=NewsConfig)
 
     def universe(self) -> list[str]:
         symbols = []
@@ -132,6 +143,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
         sizing=strat.get("sizing", "risk"),
         pullback=StrategyConfig(**strat.get("pullback", {})),
         momentum=MomentumConfig(**strat.get("momentum", {})),
+        news=NewsConfig(**raw.get("news", {})),
     )
     settings.risk.validate()
     if settings.sizing not in SIZING_MODES:

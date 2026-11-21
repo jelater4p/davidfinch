@@ -10,7 +10,7 @@ geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 | 1 | Ayarlar, SQLite, Yahoo verisi, PaperBroker, risk kuralları | ✅ |
 | 2 | Strateji, gerekçe kartı, backtest | ✅ |
 | 3 | Walk-forward + aylık öğrenme | ✅ |
-| 4 | KAP + Claude filtresi | ⏳ |
+| 4 | KAP + Claude filtresi | ✅ (KAP bağlantısı VPS'te doğrulanacak) |
 | 5 | Telegram bot + zamanlayıcı | ⏳ |
 | 6 | Docker + VPS kurulumu | ⏳ |
 
@@ -32,6 +32,8 @@ python -m bot status          # cüzdan durumu
 python -m bot backtest --start 2022-01-01   # rapor: reports/ klasörüne
 python -m bot walkforward --start 2022-01-01   # aylık öğrenmeyi geçmişte sına
 python -m bot learn           # aylık parametre güncellemesi (canlı paper)
+python -m bot kap-check       # KAP bağlantı/biçim teşhisi (VPS'te bir kez)
+python -m bot news THYAO      # hissenin son bildirimleri + Claude analizi
 pytest                        # testler
 ```
 
@@ -64,6 +66,23 @@ sabit parametreli sonuçla kıyaslar.
 
 İkincil strateji (`pullback`, pasif): trend içinde geri çekilmeden al.
 `python -m bot backtest --strategy pullback` ile çalıştırılabilir.
+
+## KAP filtresi (`bot/news/`)
+
+- Kaynak arayüzü `NewsSource`: bugün `KapWebSource`, ileride Matriks aynı arayüzle takılır
+  (`settings.yaml` → `news.source`).
+- Her bildirim bir kez çekilir, bir kez Claude ile sınıflandırılır (yapılandırılmış JSON çıktı) ve
+  SQLite'ta önbelleklenir.
+- Son 7 günde **ciddi olumsuz** bildirimi olan hisse alınmaz (güven ≥ 0.6). Ciddi olumsuz şunlardır:
+  SPK cezası/işlem yasağı, önemli dava, konkordato/iflas, büyük sözleşme iptali, beklenmedik zarar,
+  denetçinin olumsuz görüşü, temerrüt.
+- Elde tutulan hissede ciddi olumsuz haber çıkarsa uyarı üretilir; otomatik satış yapılmaz.
+- Kaynak veya analiz hatası alımı engellemez, sadece uyarı üretir.
+- **Uyarı:** KAP'ın resmi API'si yoktur. `KapWebSource` sitenin kendi veri adreslerini kullanır; bu,
+  KAP'ın izin verdiği bir kullanım değildir ve kırılabilir. Alan eşlemesi doğrulanmadı; VPS'te
+  `kap-check` ile kontrol edilmeli.
+- Geçmiş bildirim verisi olmadığı için filtre backtest'e dahil değildir.
+- Claude API anahtarı `.env` içindeki `ANTHROPIC_API_KEY` değişkeninden okunur.
 
 ## Sabit risk kuralları (`settings.yaml` → `risk`)
 
