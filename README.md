@@ -52,9 +52,11 @@ Lot yöntemi (`strategy.sizing`):
 
 Her ayın ilk işlem gününde, aylık yenilemeden önce, parametreler son 24 ayın verisiyle yeniden seçilir.
 - Ölçü: Sharpe oranı.
-- Arama alanı: `lookback` {63,126,252}, `hold_rank` {10,15,20}, `atr_stop_mult` {2.0 … 4.0}.
+- Arama alanı: `hold_rank` {10,15,20}, `atr_stop_mult` {2.0 … 4.0}. `lookback` 126 günde sabit
+  (ilk walk-forward'da 126 ↔ 252 arasında gidip gelip gürültüye tepki verdi).
 - Fren 1: her parametre bir ayda en fazla bir ızgara adımı oynar.
-- Fren 2: Sharpe en az 0.20 iyileşmiyorsa değişiklik yapılmaz.
+- Fren 2: Sharpe en az 0.20 iyileşmiyorsa öneri yapılmaz.
+- Fren 3: öneri ancak art arda 2 ay aynı çıkarsa uygulanır.
 - Her ayın kararı gerekçesiyle `param_history` tablosuna yazılır.
 
 `walkforward` komutu bu döngüyü geçmişte, her ay sadece o güne kadarki veriyle çalıştırır ve

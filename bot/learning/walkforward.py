@@ -41,10 +41,11 @@ def _eval_job(args) -> Evaluation:
     return optimizer.evaluate(_W["cache"], _W["settings"], p, start, end)
 
 
-def _choose_parallel(pool, settings: Settings, current: MomentumConfig, start: date, end: date) -> Decision:
+def _choose_parallel(pool, settings: Settings, current: MomentumConfig, start: date, end: date,
+                     previous_proposal: MomentumConfig | None) -> Decision:
     cands = neighbors(current, settings.risk.max_open_positions)
     evals = list(pool.map(_eval_job, [(p, start, end) for p in cands]))
-    return optimizer.decide(current, evals, start, end)
+    return optimizer.decide(current, evals, start, end, previous_proposal)
 
 
 # ------------------------------------------------------------- ana döngü
@@ -76,6 +77,7 @@ def run_walk_forward(data: dict[str, pd.DataFrame], settings: Settings, start: d
     engine = Engine(broker, settings, strat, rows)
     days = [d for d in strat.trading_days if start <= d <= end]
     decisions: list[tuple[date, Decision]] = []
+    proposal: MomentumConfig | None = None
 
     ctx = mp.get_context("fork")
     with ProcessPoolExecutor(max_workers=workers or mp.cpu_count(), mp_context=ctx,
@@ -83,7 +85,8 @@ def run_walk_forward(data: dict[str, pd.DataFrame], settings: Settings, start: d
         for i, day in enumerate(days):
             if strat.is_rebalance_day(day):
                 train_end = days[i - 1] if i > 0 else strat._prev_trading_day(day)
-                dec = _choose_parallel(pool, settings, p, _months_before(day, train_months), train_end)
+                dec = _choose_parallel(pool, settings, p, _months_before(day, train_months), train_end, proposal)
+                proposal = dec.proposal
                 decisions.append((day, dec))
                 if progress:
                     progress(day, dec)
