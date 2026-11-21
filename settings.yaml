@@ -1,0 +1,30 @@
+# davidfinch — BIST100 paper trade botu ayarları
+# Gizli bilgiler (API anahtarları, token'lar) burada DEĞİL, .env dosyasında durur.
+
+timezone: Europe/Istanbul
+db_path: data/davidfinch.db
+universe_file: data/bist100.txt
+
+data:
+  source: yahoo            # ileride: matriks
+  history_days: 400        # 200 günlük ortalama + walk-forward için yeterli geçmiş
+
+risk:                      # SABİT KURALLAR — bot bunları asla kendisi değiştiremez
+  initial_capital: 100000  # TL
+  min_cash_ratio: 0.30     # portföyün en az %30'u nakit
+  max_position_ratio: 0.28 # tek hisse en fazla portföyün %28'i (%70 x %40)
+  risk_per_trade: 0.01     # stop olunursa kayıp en fazla portföyün %1'i
+  max_open_positions: 6
+
+costs:
+  commission_rate: 0.002   # binde 2 (temkinli varsayım; kurumun oranını öğrenince güncelle)
+  bsmv_rate: 0.05          # komisyon üzerinden %5 BSMV
+  slippage_rate: 0.001     # alımda +%0.1, satımda -%0.1 kayma
+
+strategy:                  # ÖĞRENİLEN PARAMETRELER — başlangıç değerleri
+  trend_sma: 50            # izinli: 50, 100, 200
+  rsi_entry: 35            # izinli: 25–40
+  atr_stop_mult: 2.5       # izinli: 1.5–3.5
+  volume_mult: 1.2         # izinli: 1.0–2.0
+  atr_period: 14
+  rsi_period: 14
