@@ -3,6 +3,8 @@
   fetch     Evrendeki hisselerin (ve endeksin) günlük verisini çekip veritabanına yazar
   status    Cüzdan durumunu gösterir
   backtest  Stratejiyi geçmiş veride çalıştırıp rapor üretir
+  walkforward  Aylık öğrenme döngüsünü geçmişte sınar (görmediği veride)
+  learn     Aylık parametre güncellemesi (canlı paper; ayda bir)
 """
 from __future__ import annotations
 
@@ -88,6 +90,63 @@ def cmd_backtest(args, settings, db) -> None:
     print(f"\nDetaylar: {out}/ (equity.csv, trades.csv, cards.txt, metrics.json)")
 
 
+def _load_universe(settings, store, end):
+    data = {}
+    for sym in settings.universe():
+        df = store.history(sym, end=end)
+        if len(df) > 60:
+            data[sym] = df
+    if not data:
+        raise SystemExit("Veri yok. Önce: python -m bot fetch --days 3300")
+    return data
+
+
+def cmd_walkforward(args, settings, db) -> None:
+    from .learning.walkforward import run_walk_forward
+
+    store = PriceStore(db)
+    end = date.fromisoformat(args.end) if args.end else date.today()
+    start = date.fromisoformat(args.start) if args.start else date(2022, 1, 1)
+    data = _load_universe(settings, store, end)
+    bench_df = store.history(settings.benchmark, start=start, end=end)
+    bench = bench_df["close"] if not bench_df.empty else None
+
+    def progress(day, dec):
+        mark = "DEĞİŞTİ" if dec.changed else "aynı   "
+        print(f"[{day}] {mark} {dec.explanation}", flush=True)
+
+    res = run_walk_forward(data, settings, start, end, benchmark=bench, workers=args.workers, progress=progress)
+    print()
+    print(format_report(res.metrics, f"Walk-forward (aylık öğrenme) {start} → {end}"))
+    print(f"Parametre değişikliği: {res.metrics['param_changes']} / {len(res.decisions)} ay")
+    print()
+    print(format_report(res.baseline_metrics, "Kıyas: sabit başlangıç parametreleri"))
+
+    out = Path(args.out or ROOT / "reports" / f"walkforward_{start}_{end}")
+    out.mkdir(parents=True, exist_ok=True)
+    res.equity.rename("equity").to_csv(out / "equity.csv")
+    if not res.trades.empty:
+        res.trades.to_csv(out / "trades.csv", index=False)
+    with open(out / "decisions.txt", "w", encoding="utf-8") as fh:
+        for day, dec in res.decisions:
+            fh.write(f"[{day}] {dec.explanation}\n")
+    (out / "metrics.json").write_text(json.dumps(
+        {"walk_forward": res.metrics, "baseline": res.baseline_metrics}, ensure_ascii=False, indent=2, default=str))
+    print(f"\nDetaylar: {out}/")
+
+
+def cmd_learn(args, settings, db) -> None:
+    from .learning.live import current_params, monthly_update
+
+    store = PriceStore(db)
+    today = date.today()
+    dec = monthly_update(db, settings, _load_universe(settings, store, today), today, force=args.force)
+    if dec is None:
+        print("Bu ay güncelleme zaten yapıldı. Aktif parametreler:", current_params(db, settings))
+    else:
+        print(dec.explanation)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="python -m bot")
@@ -103,12 +162,20 @@ def main() -> None:
     p_bt.add_argument("--out", help="Rapor klasörü")
     p_bt.add_argument("--strategy", choices=["momentum", "pullback"], help="Varsayılan: settings")
     p_bt.add_argument("--sizing", choices=["equal_weight", "risk"], help="Varsayılan: settings")
+    p_wf = sub.add_parser("walkforward", help="Aylık öğrenmeyi geçmişte sına")
+    p_wf.add_argument("--start", help="Test başlangıcı (varsayılan 2022-01-01)")
+    p_wf.add_argument("--end")
+    p_wf.add_argument("--out")
+    p_wf.add_argument("--workers", type=int, help="Paralel işlem sayısı (varsayılan: CPU sayısı)")
+    p_learn = sub.add_parser("learn", help="Aylık parametre güncellemesi")
+    p_learn.add_argument("--force", action="store_true", help="Bu ay yapılmış olsa da tekrar çalıştır")
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
     db = Database(settings.db_path)
     try:
-        {"fetch": cmd_fetch, "status": cmd_status, "backtest": cmd_backtest}[args.command](args, settings, db)
+        {"fetch": cmd_fetch, "status": cmd_status, "backtest": cmd_backtest,
+         "walkforward": cmd_walkforward, "learn": cmd_learn}[args.command](args, settings, db)
     finally:
         db.close()
 

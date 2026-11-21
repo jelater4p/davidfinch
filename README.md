@@ -9,7 +9,7 @@ geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 |---|---|---|
 | 1 | Ayarlar, SQLite, Yahoo verisi, PaperBroker, risk kuralları | ✅ |
 | 2 | Strateji, gerekçe kartı, backtest | ✅ |
-| 3 | Walk-forward + haftalık öğrenme | ⏳ |
+| 3 | Walk-forward + aylık öğrenme | ✅ |
 | 4 | KAP + Claude filtresi | ⏳ |
 | 5 | Telegram bot + zamanlayıcı | ⏳ |
 | 6 | Docker + VPS kurulumu | ⏳ |
@@ -30,6 +30,8 @@ python -m bot fetch THYAO     # tek hisse
 python -m bot fetch --days 2200   # backtest için ~6 yıllık geçmiş
 python -m bot status          # cüzdan durumu
 python -m bot backtest --start 2022-01-01   # rapor: reports/ klasörüne
+python -m bot walkforward --start 2022-01-01   # aylık öğrenmeyi geçmişte sına
+python -m bot learn           # aylık parametre güncellemesi (canlı paper)
 pytest                        # testler
 ```
 
@@ -45,6 +47,18 @@ hisse bir sonraki aylık yenilemeye kadar tekrar alınmaz.
 Lot yöntemi (`strategy.sizing`):
 - `risk` (aktif): lot = (portföy x %1) / stop mesafesi.
 - `equal_weight`: her hisseye portföy / 10. İşlem başı risk sınır değil, kartta raporlanır.
+
+## Öğrenme döngüsü (`bot/learning/`)
+
+Her ayın ilk işlem gününde, aylık yenilemeden önce, parametreler son 24 ayın verisiyle yeniden seçilir.
+- Ölçü: Sharpe oranı.
+- Arama alanı: `lookback` {63,126,252}, `hold_rank` {10,15,20}, `atr_stop_mult` {2.0 … 4.0}.
+- Fren 1: her parametre bir ayda en fazla bir ızgara adımı oynar.
+- Fren 2: Sharpe en az 0.20 iyileşmiyorsa değişiklik yapılmaz.
+- Her ayın kararı gerekçesiyle `param_history` tablosuna yazılır.
+
+`walkforward` komutu bu döngüyü geçmişte, her ay sadece o güne kadarki veriyle çalıştırır ve
+sabit parametreli sonuçla kıyaslar.
 
 İkincil strateji (`pullback`, pasif): trend içinde geri çekilmeden al.
 `python -m bot backtest --strategy pullback` ile çalıştırılabilir.
