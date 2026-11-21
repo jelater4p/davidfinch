@@ -24,6 +24,13 @@ def current_params(db: Database, settings: Settings) -> MomentumConfig:
     return MomentumConfig(**json.loads(row["params"]))
 
 
+def last_proposal(db: Database) -> MomentumConfig | None:
+    row = db.query_one("SELECT proposal FROM param_history ORDER BY id DESC LIMIT 1")
+    if row is None or not row["proposal"]:
+        return None
+    return MomentumConfig(**json.loads(row["proposal"]))
+
+
 def already_updated(db: Database, today: date) -> bool:
     row = db.query_one(
         "SELECT 1 FROM param_history WHERE substr(effective_date, 1, 7) = ?", (today.strftime("%Y-%m"),)
@@ -38,10 +45,11 @@ def monthly_update(db: Database, settings: Settings, data: dict[str, pd.DataFram
         return None
     current = current_params(db, settings)
     start = (pd.Timestamp(today) - pd.DateOffset(months=TRAIN_MONTHS)).date()
-    decision = choose(RowsCache(data), settings, current, start, today)
+    decision = choose(RowsCache(data), settings, current, start, today, last_proposal(db))
+    proposal = dumps(params_to_dict(decision.proposal)) if decision.proposal else None
     with db.transaction() as conn:
         conn.execute(
-            "INSERT INTO param_history (effective_date, params, reason) VALUES (?, ?, ?)",
-            (today.isoformat(), dumps(params_to_dict(decision.params)), decision.explanation),
+            "INSERT INTO param_history (effective_date, params, reason, proposal) VALUES (?, ?, ?, ?)",
+            (today.isoformat(), dumps(params_to_dict(decision.params)), decision.explanation, proposal),
         )
     return decision

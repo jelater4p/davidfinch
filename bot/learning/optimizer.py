@@ -1,11 +1,14 @@
 """Frenli parametre ayarı (aylık).
 
 Kurallar:
-  * Arama alanı: GRID (kullanıcının onayladığı izinli aralıklar).
+  * Arama alanı: GRID (kullanıcının onayladığı izinli aralıklar). Momentum penceresi
+    (lookback) öğrenme dışıdır ve settings'teki değerde (126) sabittir — walk-forward'da
+    126 ile 252 arasında gidip gelip gürültüye tepki verdiği görüldü.
   * Fren 1 — adım sınırı: her parametre bir ayda en fazla bir ızgara adımı oynar
     (ör. lookback 126 -> 252 olabilir, 63 -> 252 olamaz; atr 3.0 -> 3.5 olabilir, 4.0 olamaz).
   * Fren 2 — anlamlı iyileşme: yeni aday, mevcut parametrelerden en az
-    MIN_SHARPE_GAIN kadar daha iyi Sharpe vermiyorsa değişiklik yapılmaz.
+    MIN_SHARPE_GAIN kadar daha iyi Sharpe vermiyorsa değişiklik önerilmez.
+  * Fren 3 — teyit: bir öneri ancak art arda CONFIRM_MONTHS ay aynı çıkarsa uygulanır.
   * Ölçü: eğitim penceresindeki (son TRAIN_MONTHS ay) backtest Sharpe oranı.
 """
 from __future__ import annotations
@@ -22,11 +25,11 @@ from ..engine import Rows, build_rows
 from ..strategy.momentum import MomentumStrategy
 
 GRID: dict[str, list] = {
-    "lookback": [63, 126, 252],
     "hold_rank": [10, 15, 20],
     "atr_stop_mult": [2.0, 2.5, 3.0, 3.5, 4.0],
 }
 MIN_SHARPE_GAIN = 0.20
+CONFIRM_MONTHS = 2
 TRAIN_MONTHS = 24
 LABELS = {"lookback": "momentum penceresi", "hold_rank": "tutma sınırı", "atr_stop_mult": "ATR stop çarpanı"}
 
@@ -93,16 +96,24 @@ class Decision:
     best: Evaluation
     explanation: str
     candidates: int
+    proposal: MomentumConfig | None = None   # teyit bekleyen öneri (bu ayın en iyi adayı)
 
 
-def choose(cache: RowsCache, settings: Settings, current: MomentumConfig, start: date, end: date) -> Decision:
+def choose(cache: RowsCache, settings: Settings, current: MomentumConfig, start: date, end: date,
+           previous_proposal: MomentumConfig | None = None) -> Decision:
     cands = neighbors(current, settings.risk.max_open_positions)
-    return decide(current, [evaluate(cache, settings, p, start, end) for p in cands], start, end)
+    evals = [evaluate(cache, settings, p, start, end) for p in cands]
+    return decide(current, evals, start, end, previous_proposal)
 
 
-def decide(current: MomentumConfig, evals: list[Evaluation], start: date, end: date) -> Decision:
-    """Değerlendirilmiş adaylar arasından frenli seçim (Fren 2)."""
-    cands = evals
+def _changes(a: MomentumConfig, b: MomentumConfig) -> str:
+    return ", ".join(f"{LABELS[k]} {getattr(a, k):g} → {getattr(b, k):g}"
+                     for k in GRID if getattr(a, k) != getattr(b, k))
+
+
+def decide(current: MomentumConfig, evals: list[Evaluation], start: date, end: date,
+           previous_proposal: MomentumConfig | None = None) -> Decision:
+    """Değerlendirilmiş adaylar arasından frenli seçim (Fren 2 ve 3)."""
     cur = next(e for e in evals if e.params == current)
     best = max(evals, key=lambda e: e.sharpe)
     window = f"{start:%Y-%m} → {end:%Y-%m}"
@@ -110,16 +121,19 @@ def decide(current: MomentumConfig, evals: list[Evaluation], start: date, end: d
     if best.params == current or best.sharpe < cur.sharpe + MIN_SHARPE_GAIN:
         expl = (f"Parametreler değişmedi. {window} döneminde mevcut ayar Sharpe {cur.sharpe:.2f}; "
                 f"en iyi komşu aday {best.sharpe:.2f} (gereken fark ≥ {MIN_SHARPE_GAIN}).")
-        return Decision(False, current, cur, best, expl, len(cands))
+        return Decision(False, current, cur, best, expl, len(evals), None)
 
-    changes = [
-        f"{LABELS[k]} {getattr(current, k):g} → {getattr(best.params, k):g}"
-        for k in GRID if getattr(current, k) != getattr(best.params, k)
-    ]
-    expl = (f"{', '.join(changes)}. Gerekçe: {window} döneminde Sharpe {cur.sharpe:.2f} → {best.sharpe:.2f}, "
-            f"getiri %{100 * cur.total_return:+.0f} → %{100 * best.total_return:+.0f}, "
-            f"en büyük düşüş %{100 * cur.max_drawdown:.0f} → %{100 * best.max_drawdown:.0f}.")
-    return Decision(True, best.params, cur, best, expl, len(cands))
+    evidence = (f"{window} döneminde Sharpe {cur.sharpe:.2f} → {best.sharpe:.2f}, "
+                f"getiri %{100 * cur.total_return:+.0f} → %{100 * best.total_return:+.0f}, "
+                f"en büyük düşüş %{100 * cur.max_drawdown:.0f} → %{100 * best.max_drawdown:.0f}")
+    if previous_proposal != best.params:
+        expl = (f"Öneri (henüz uygulanmadı): {_changes(current, best.params)}. Gerekçe: {evidence}. "
+                f"Uygulanması için gelecek ay da aynı sonuç çıkmalı.")
+        return Decision(False, current, cur, best, expl, len(evals), best.params)
+
+    expl = (f"{_changes(current, best.params)}. Gerekçe: {evidence}. "
+            f"Öneri {CONFIRM_MONTHS}. ay üst üste çıktı, uygulandı.")
+    return Decision(True, best.params, cur, best, expl, len(evals), None)
 
 
 def params_to_dict(p: MomentumConfig) -> dict:

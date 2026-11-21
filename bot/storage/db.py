@@ -83,8 +83,9 @@ CREATE TABLE IF NOT EXISTS equity_snapshots (
 CREATE TABLE IF NOT EXISTS param_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     effective_date TEXT NOT NULL,
-    params TEXT NOT NULL,       -- JSON
-    reason TEXT
+    params TEXT NOT NULL,       -- JSON: o ay geçerli parametreler
+    reason TEXT,
+    proposal TEXT               -- JSON: teyit bekleyen öneri (yoksa NULL)
 );
 """
 
@@ -100,6 +101,13 @@ class Database:
         if self.path != ":memory:":
             self.conn.execute("PRAGMA journal_mode = WAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Eski veritabanlarına sonradan eklenen sütunlar."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(param_history)")}
+        if "proposal" not in cols:
+            self.conn.execute("ALTER TABLE param_history ADD COLUMN proposal TEXT")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
