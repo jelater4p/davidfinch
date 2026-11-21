@@ -1,0 +1,2 @@
+# davidfinch
+trade analysis bot
