@@ -224,7 +224,13 @@ def _runner(settings, db):
 def cmd_run(args, settings, db) -> None:
     from .live.daemon import Daemon
 
-    Daemon(_runner(settings, db), _notifier(), tz=settings.timezone).run_forever()
+    import os
+
+    data_dir = os.path.dirname(os.path.abspath(settings.db_path))
+    Daemon(_runner(settings, db), _notifier(), tz=settings.timezone,
+           evening_offset_min=int(os.environ.get("EVENING_OFFSET_MIN", "0")),
+           heartbeat_file=os.path.join(data_dir, "heartbeat"),
+           backup_dir=os.path.join(data_dir, "backups")).run_forever()
 
 
 def cmd_evening(args, settings, db) -> None:
@@ -273,6 +279,8 @@ def main() -> None:
     p_ev.add_argument("--send", action="store_true", help="Sonucu Telegram'a da gönder")
     sub.add_parser("telegram-test", help="Telegram deneme mesajı")
     args = parser.parse_args()
+    if args.command in ("run", "evening"):
+        logging.getLogger().setLevel(logging.INFO)
 
     settings = load_settings(args.settings)
     db = Database(settings.db_path)

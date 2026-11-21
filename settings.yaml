@@ -3,7 +3,7 @@
 
 timezone: Europe/Istanbul
 db_path: data/davidfinch.db
-universe_file: data/bist100.txt
+universe_file: universes/bist100.txt
 
 data:
   source: yahoo            # ileride: matriks

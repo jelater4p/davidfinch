@@ -85,7 +85,7 @@ SIZING_MODES = ("equal_weight", "risk")
 class Settings:
     timezone: str = "Europe/Istanbul"
     db_path: Path = ROOT / "data" / "davidfinch.db"
-    universe_file: Path = ROOT / "data" / "bist100.txt"
+    universe_file: Path = ROOT / "universes" / "bist100.txt"
     data_source: str = "yahoo"
     history_days: int = 400
     benchmark: str = "XU100"
@@ -133,7 +133,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     settings = Settings(
         timezone=raw.get("timezone", "Europe/Istanbul"),
         db_path=_resolve(os.environ.get("DAVIDFINCH_DB", raw.get("db_path", "data/davidfinch.db"))),
-        universe_file=_resolve(raw.get("universe_file", "data/bist100.txt")),
+        universe_file=_resolve(raw.get("universe_file", "universes/bist100.txt")),
         data_source=data.get("source", "yahoo"),
         history_days=int(data.get("history_days", 400)),
         benchmark=data.get("benchmark", "XU100"),

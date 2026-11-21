@@ -97,4 +97,6 @@ class ConsoleNotifier:
         print(text, flush=True)
 
     def poll(self, timeout: int = 25) -> list[Update]:
+        import time
+        time.sleep(min(timeout, 5))   # döngü boşa dönüp işlemciyi yakmasın
         return []
