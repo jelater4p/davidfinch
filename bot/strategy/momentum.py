@@ -11,10 +11,15 @@ Yenileme günü:
   * Değilse ertesi açılışta SATILIR
   * Boşalan yerler en yüksek skorlu uygun hisselerle doldurulur
 
-Aylar arasında: iz süren ATR stop korur.
+Aylar arasında:
+  * İz süren ATR stop korur.
+  * Haftalık doldurma: haftanın ilk işlem günü kapanışından sonra, stop vb. ile
+    boşalan yerler sıralamanın en güçlü adaylarıyla doldurulur.
+  * Bekleme: stop olan hisse, bir sonraki aylık yenilemeye kadar tekrar alınmaz.
 """
 from __future__ import annotations
 
+import bisect
 from datetime import date
 
 import pandas as pd
@@ -39,14 +44,28 @@ class MomentumStrategy(Strategy):
         return out
 
     # ---------------------------------------------------------------- takvim
+    def _prev_trading_day(self, day: date) -> date | None:
+        i = bisect.bisect_left(self.trading_days, day)
+        return self.trading_days[i - 1] if i > 0 else None
+
     def is_rebalance_day(self, day: date) -> bool:
         """Ayın ilk işlem günü mü? (önceki işlem günü başka ayda)"""
-        import bisect
-        i = bisect.bisect_left(self.trading_days, day)
-        if i == 0:
-            return False   # veri başlangıcı; önceki günü bilmiyoruz
-        prev = self.trading_days[i - 1]
-        return (prev.year, prev.month) != (day.year, day.month)
+        prev = self._prev_trading_day(day)
+        return prev is not None and (prev.year, prev.month) != (day.year, day.month)
+
+    def is_refill_day(self, day: date) -> bool:
+        """Haftanın ilk işlem günü mü? (önceki işlem günü başka ISO haftasında)"""
+        prev = self._prev_trading_day(day)
+        return prev is not None and prev.isocalendar()[:2] != day.isocalendar()[:2]
+
+    def cooldown_since(self, day: date) -> date | None:
+        if self.is_rebalance_day(day):
+            return None
+        i = bisect.bisect_right(self.trading_days, day)
+        for d in reversed(self.trading_days[:i]):
+            if self.is_rebalance_day(d):
+                return d
+        return self.trading_days[0] if self.trading_days else None
 
     def ranking(self, today: dict[str, Row]) -> list[tuple[str, Row]]:
         eligible = [
@@ -76,7 +95,8 @@ class MomentumStrategy(Strategy):
         return out
 
     def entry_signals(self, day, today, held):
-        if not self.is_rebalance_day(day):
+        rebalance = self.is_rebalance_day(day)
+        if not rebalance and not self.is_refill_day(day):
             return []
         ranked = self.ranking(today)
         n = len(ranked)
@@ -93,7 +113,8 @@ class MomentumStrategy(Strategy):
                     f"%{100 * row['mom']:+.1f} — uygun {n} hisse içinde {i + 1}. sırada",
                     f"Trend: kapanış {row['close']:.2f} > {self.p.trend_sma}g ortalama "
                     f"{row['sma']:.2f} (%{100 * above:.1f} üstünde)",
-                    "Aylık yenileme günü: boşalan yer en güçlü adayla dolduruluyor",
+                    "Aylık yenileme günü: boşalan yer en güçlü adayla dolduruluyor" if rebalance
+                    else "Haftalık doldurma: ay içinde boşalan yer en güçlü adayla dolduruluyor",
                 ],
                 facts={"rank": i + 1, "mom": float(row["mom"])},
             ))

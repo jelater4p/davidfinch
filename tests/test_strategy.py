@@ -130,3 +130,36 @@ def test_momentum_equal_weight_backtest_is_mostly_invested():
     import json
     card = json.loads(buys.iloc[0]["reason"])
     assert card["strategy"] == "momentum" and 9 < card["portfolio_pct"] <= 10.0
+
+
+def test_momentum_refill_and_cooldown_calendar():
+    strat = MomentumStrategy(M)
+    # 2024-02: 1 Şub Per (aylık), 5 Şub Pzt (haftalık), 6 Şub Sa (hiçbiri)
+    strat.trading_days = [date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 2),
+                          date(2024, 2, 5), date(2024, 2, 6)]
+    assert strat.is_rebalance_day(date(2024, 2, 1))
+    assert strat.is_refill_day(date(2024, 2, 5)) and not strat.is_rebalance_day(date(2024, 2, 5))
+    assert not strat.is_refill_day(date(2024, 2, 6))
+    assert strat.cooldown_since(date(2024, 2, 1)) is None
+    assert strat.cooldown_since(date(2024, 2, 6)) == date(2024, 2, 1)
+
+
+def test_stopped_symbol_not_rebought_same_month():
+    from bot.broker.paper import PaperBroker
+    from bot.config import CostConfig, RiskConfig
+    from bot.engine import Engine
+    from bot.storage.db import Database
+    db = Database(":memory:")
+    broker = PaperBroker(db, RiskConfig(), CostConfig())
+    db.conn.execute("""INSERT INTO trades (symbol, qty, entry_date, entry_price, exit_date, exit_price,
+                       pnl, pnl_pct, exit_reason) VALUES ('UP_FAST', 1, '2024-08-01', 1, '2024-09-03', 1, 0, 0, 'stop')""")
+    data = {"UP_FAST": make_series(drift=0.006, pullbacks=False, seed=1),
+            "UP_SLOW": make_series(drift=0.002, pullbacks=False, seed=2)}
+    strat = MomentumStrategy(M)
+    from bot.engine import build_rows
+    rows = build_rows(data, strat)
+    engine = Engine(broker, Settings(momentum=M), strat, rows)
+    refill = next(d for d in strat.trading_days
+                  if d > date(2024, 9, 3) and d.month == 9 and strat.is_refill_day(d))
+    res = engine.run_day(refill)
+    assert [o["symbol"] for o in res.orders] == ["UP_SLOW"]

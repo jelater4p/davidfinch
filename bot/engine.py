@@ -88,6 +88,9 @@ class Engine:
         pending = [o for o in self.broker.pending_orders() if o["side"] == "BUY"]
         cash = self.broker.cash() + freed_cash - sum(o["qty"] * self.last_close.get(o["symbol"], 0) for o in pending)
         busy = set(positions) | {o["symbol"] for o in pending}
+        since = self.strategy.cooldown_since(day)
+        if since is not None:
+            busy |= self.broker.stopped_since(since)   # stop olan hisse bekleme süresinde
         open_count = len(positions) - len(exits) + len(pending)
 
         sizer = size_equal_weight if self.sizing == "equal_weight" else size_position

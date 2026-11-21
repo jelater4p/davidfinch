@@ -24,7 +24,7 @@ costs:
 
 strategy:
   active: momentum         # momentum | pullback
-  sizing: equal_weight     # equal_weight | risk  (bkz. README)
+  sizing: risk             # risk (kullanıcı kararı) | equal_weight
 
   momentum:                # ÖĞRENİLEN PARAMETRELER — başlangıç değerleri
     lookback: 126          # momentum penceresi (gün); izinli: 63, 126, 252

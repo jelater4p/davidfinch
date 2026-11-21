@@ -39,10 +39,12 @@ Ayın ilk işlem günü kapanışından sonra evren sıralanır: skor = son 126 
 (son 21 gün hariç); uygunluk = kapanış > 200g ortalama ve skor > 0. Sıralamada ilk
 `hold_rank` (15) dışına düşen ya da uygunluğunu kaybeden hisse ertesi açılışta satılır,
 boşalan yerler en güçlü adaylarla doldurulur. Aylar arasında iz süren ATR stop (3 x ATR) korur.
+Haftanın ilk işlem günü, ay içinde boşalan yerler yine sıralamaya göre doldurulur; stop olan
+hisse bir sonraki aylık yenilemeye kadar tekrar alınmaz.
 
 Lot yöntemi (`strategy.sizing`):
+- `risk` (aktif): lot = (portföy x %1) / stop mesafesi.
 - `equal_weight`: her hisseye portföy / 10. İşlem başı risk sınır değil, kartta raporlanır.
-- `risk`: lot = (portföy x %1) / stop mesafesi.
 
 İkincil strateji (`pullback`, pasif): trend içinde geri çekilmeden al.
 `python -m bot backtest --strategy pullback` ile çalıştırılabilir.

@@ -82,7 +82,7 @@ class Settings:
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
     active_strategy: str = "momentum"
-    sizing: str = "equal_weight"   # equal_weight: her hisseye portföy/max_open_positions; risk: %risk/stop
+    sizing: str = "risk"   # equal_weight: her hisseye portföy/max_open_positions; risk: %risk/stop
     pullback: StrategyConfig = field(default_factory=StrategyConfig)
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
 
@@ -129,7 +129,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
         risk=RiskConfig(**raw.get("risk", {})),
         costs=CostConfig(**raw.get("costs", {})),
         active_strategy=strat.get("active", "momentum"),
-        sizing=strat.get("sizing", "equal_weight"),
+        sizing=strat.get("sizing", "risk"),
         pullback=StrategyConfig(**strat.get("pullback", {})),
         momentum=MomentumConfig(**strat.get("momentum", {})),
     )

@@ -46,6 +46,10 @@ class Strategy(ABC):
         """Tüm işlem günlerini öğrenir (ay başı yenileme gibi takvim kararları için)."""
         self.trading_days = sorted({d for r in rows.values() for d in r})
 
+    def cooldown_since(self, day: date) -> date | None:
+        """Bu tarihten beri stop olan hisseler tekrar alınmaz (None: bekleme yok)."""
+        return None
+
     @property
     def atr_stop_mult(self) -> float:
         return self.p.atr_stop_mult

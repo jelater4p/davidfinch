@@ -56,6 +56,13 @@ class PaperBroker(Broker):
     def pending_orders(self) -> list[dict]:
         return [dict(r) for r in self.db.query("SELECT * FROM orders WHERE status = 'PENDING' ORDER BY id")]
 
+    def stopped_since(self, since: date) -> set[str]:
+        rows = self.db.query(
+            "SELECT DISTINCT symbol FROM trades WHERE exit_reason = 'stop' AND exit_date >= ?",
+            (since.isoformat(),),
+        )
+        return {r["symbol"] for r in rows}
+
     # ------------------------------------------------------------------ yazma
     def submit(self, req: OrderRequest) -> int:
         if req.side not in ("BUY", "SELL"):
