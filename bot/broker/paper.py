@@ -92,6 +92,26 @@ class PaperBroker(Broker):
                 (note, order_id),
             )
 
+    def apply_split(self, symbol: str, price_factor: float) -> None:
+        """Bedelsiz/bölünme: fiyatlar price_factor ile çarpıldı (ör. %100 bedelsizde 0.5).
+
+        Lot 1/price_factor ile çarpılır; maliyet, stop ve en yüksek kapanış aynı oranda düşer.
+        Pozisyonun TL değeri değişmez. Bekleyen emirlerin lot ve stop'ları da uyarlanır.
+        """
+        if price_factor <= 0:
+            raise ValueError("price_factor pozitif olmalı")
+        with self.db.transaction() as conn:
+            conn.execute(
+                """UPDATE positions SET qty = CAST(ROUND(qty / ?) AS INTEGER), avg_cost = avg_cost * ?,
+                       stop_price = stop_price * ?, highest_close = highest_close * ? WHERE symbol = ?""",
+                (price_factor, price_factor, price_factor, price_factor, symbol),
+            )
+            conn.execute(
+                """UPDATE orders SET qty = MAX(1, CAST(ROUND(qty / ?) AS INTEGER)), stop_price = stop_price * ?
+                   WHERE symbol = ? AND status = 'PENDING'""",
+                (price_factor, price_factor, symbol),
+            )
+
     def update_stop(self, symbol: str, new_stop: float, allow_lower: bool = False) -> None:
         """İz süren stop: varsayılan olarak stop asla aşağı çekilmez."""
         with self.db.transaction() as conn:

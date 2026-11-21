@@ -7,6 +7,9 @@
   learn     Aylık parametre güncellemesi (canlı paper; ayda bir)
   kap-check KAP bağlantısını ve yanıt biçimini teşhis eder (VPS'te bir kez çalıştırın)
   news      Bir hissenin son bildirimlerini çeker, Claude ile analiz edip gösterir
+  run       Sürekli çalışan bot: Telegram komutları + günlük zamanlanmış işler (VPS'te bu çalışır)
+  evening   Akşam işini elle bir kez çalıştırır (test/onarım için)
+  telegram-test  Telegram'a deneme mesajı gönderir
 """
 from __future__ import annotations
 
@@ -191,6 +194,53 @@ def cmd_news(args, settings, db) -> None:
             print(f"    {r['category']} (güven {r['confidence']:.2f}): {r['reason']}")
 
 
+def _notifier():
+    import os
+
+    from .notify.telegram import ConsoleNotifier, Telegram
+
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+    if token and chat:
+        return Telegram(token, chat)
+    print("UYARI: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID yok — mesajlar konsola yazılacak.")
+    return ConsoleNotifier()
+
+
+def _runner(settings, db):
+    import os
+
+    from .live.runner import LiveRunner
+    from .news import make_news_filter
+
+    news = None
+    if settings.news.enabled:
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            news = make_news_filter(settings, db)
+        else:
+            print("UYARI: ANTHROPIC_API_KEY yok — KAP filtresi devre dışı.")
+    return LiveRunner(settings, db, YahooSource(), news)
+
+
+def cmd_run(args, settings, db) -> None:
+    from .live.daemon import Daemon
+
+    Daemon(_runner(settings, db), _notifier(), tz=settings.timezone).run_forever()
+
+
+def cmd_evening(args, settings, db) -> None:
+    day = date.fromisoformat(args.date) if args.date else date.today()
+    res = _runner(settings, db).evening(day, fetch=not args.no_fetch)
+    text = res.message + ("\n\n" + "\n\n".join(res.sections) if res.sections else "")
+    if args.send:
+        _notifier().send(text)
+    print(text)
+
+
+def cmd_telegram_test(args, settings, db) -> None:
+    _notifier().send("✅ davidfinch: Telegram bağlantısı çalışıyor.")
+    print("Gönderildi.")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="python -m bot")
@@ -216,6 +266,12 @@ def main() -> None:
     sub.add_parser("kap-check", help="KAP bağlantı teşhisi")
     p_news = sub.add_parser("news", help="Hisse bildirimlerini analiz et")
     p_news.add_argument("symbol")
+    sub.add_parser("run", help="Sürekli çalışan bot (Telegram + zamanlayıcı)")
+    p_ev = sub.add_parser("evening", help="Akşam işini elle çalıştır")
+    p_ev.add_argument("--date", help="YYYY-AA-GG (varsayılan bugün)")
+    p_ev.add_argument("--no-fetch", action="store_true", help="Veri çekme, veritabanındakini kullan")
+    p_ev.add_argument("--send", action="store_true", help="Sonucu Telegram'a da gönder")
+    sub.add_parser("telegram-test", help="Telegram deneme mesajı")
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
@@ -223,7 +279,8 @@ def main() -> None:
     try:
         {"fetch": cmd_fetch, "status": cmd_status, "backtest": cmd_backtest,
          "walkforward": cmd_walkforward, "learn": cmd_learn,
-         "kap-check": cmd_kap_check, "news": cmd_news}[args.command](args, settings, db)
+         "kap-check": cmd_kap_check, "news": cmd_news,
+         "run": cmd_run, "evening": cmd_evening, "telegram-test": cmd_telegram_test}[args.command](args, settings, db)
     finally:
         db.close()
 
