@@ -1,28 +1,22 @@
-"""Strateji: "Trend içinde geri çekilmeden al".
+"""Strateji: "Trend içinde geri çekilmeden al" (ikincil strateji; şu an pasif).
 
 Giriş (kapanış sonrası karar, ertesi açılışta işlem):
   1. Trend:        kapanış > SMA(trend_sma) ve SMA son 10 günde yükseliyor
   2. Geri çekilme: son 3 gün içinde RSI < rsi_entry olmuş
-  3. Dönüş:        bugün kapanış > dünkü kapanış (düşüş durmuş)
+  3. Dönüş:        bugün kapanış > dünkü kapanış
   4. Hacim:        bugünkü hacim >= volume_mult x 20 günlük ortalama hacim
 
-Çıkış:
-  * İz süren stop: stop = max(eski stop, en yüksek kapanış - atr_stop_mult x ATR)
-  * Trend bozuldu: kapanış < SMA(trend_sma) -> ertesi açılışta sat
-
-Satırlar (row) sözlük olarak gelir: backtest'te hız için DataFrame satırı yerine dict.
+Çıkış: iz süren ATR stop veya kapanış < SMA(trend_sma).
 """
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Mapping
 
 import pandas as pd
 
 from ..config import StrategyConfig
 from ..indicators import atr, rsi, sma
+from .base import EntrySignal, Row, Strategy, missing
 
 SMA_SLOPE_DAYS = 10
 RSI_LOOKBACK_DAYS = 3
@@ -42,33 +36,8 @@ def compute_features(df: pd.DataFrame, p: StrategyConfig) -> pd.DataFrame:
     return out
 
 
-def _missing(row: Mapping[str, Any], keys: list[str]) -> bool:
-    return any(row.get(k) is None or (isinstance(row[k], float) and math.isnan(row[k])) for k in keys)
-
-
-@dataclass
-class EntrySignal:
-    symbol: str
-    date: date
-    close: float
-    atr: float
-    score: float                  # birden fazla sinyal varsa sıralama (trend gücü)
-    facts: dict[str, float] = field(default_factory=dict)
-
-    def reasons(self, p: StrategyConfig) -> list[str]:
-        f = self.facts
-        return [
-            f"Trend: kapanış {f['close']:.2f} > {p.trend_sma}g ortalama {f['sma']:.2f} "
-            f"(%{f['above_sma_pct']:.1f} üstünde, ortalama yükseliyor)",
-            f"Geri çekilme: son {RSI_LOOKBACK_DAYS} günde RSI {f['rsi_min3']:.0f} "
-            f"(eşik {p.rsi_entry:g}), bugün {f['rsi']:.0f}",
-            f"Dönüş: kapanış dünden %{f['day_change_pct']:+.1f}",
-            f"Hacim: 20g ortalamanın {f['vol_ratio']:.1f} katı (eşik {p.volume_mult:g}x)",
-        ]
-
-
-def entry_signal(sym: str, day: date, row: Mapping[str, Any], p: StrategyConfig) -> EntrySignal | None:
-    if _missing(row, FEATURES) or row["vol_avg"] <= 0:
+def entry_signal(sym: str, day: date, row: Row, p: StrategyConfig) -> EntrySignal | None:
+    if missing(row, FEATURES) or row["vol_avg"] <= 0:
         return None
     vol_ratio = row["volume"] / row["vol_avg"]
     if not (
@@ -80,31 +49,51 @@ def entry_signal(sym: str, day: date, row: Mapping[str, Any], p: StrategyConfig)
     ):
         return None
     above = row["close"] / row["sma"] - 1
+    day_chg = row["close"] / row["prev_close"] - 1
     return EntrySignal(
-        symbol=sym,
-        date=day,
-        close=float(row["close"]),
-        atr=float(row["atr"]),
-        score=float(above),
-        facts={
-            "close": float(row["close"]),
-            "sma": float(row["sma"]),
-            "above_sma_pct": 100 * above,
-            "rsi": float(row["rsi"]),
-            "rsi_min3": float(row["rsi_min3"]),
-            "day_change_pct": 100 * (row["close"] / row["prev_close"] - 1),
-            "vol_ratio": float(vol_ratio),
-            "atr": float(row["atr"]),
-        },
+        symbol=sym, date=day, close=float(row["close"]), atr=float(row["atr"]), score=float(above),
+        reasons=[
+            f"Trend: kapanış {row['close']:.2f} > {p.trend_sma}g ortalama {row['sma']:.2f} "
+            f"(%{100 * above:.1f} üstünde, ortalama yükseliyor)",
+            f"Geri çekilme: son {RSI_LOOKBACK_DAYS} günde RSI {row['rsi_min3']:.0f} "
+            f"(eşik {p.rsi_entry:g}), bugün {row['rsi']:.0f}",
+            f"Dönüş: kapanış dünden %{100 * day_chg:+.1f}",
+            f"Hacim: 20g ortalamanın {vol_ratio:.1f} katı (eşik {p.volume_mult:g}x)",
+        ],
+        facts={"rsi_min3": float(row["rsi_min3"]), "vol_ratio": float(vol_ratio)},
     )
 
 
-def exit_reason(row: Mapping[str, Any], p: StrategyConfig) -> str | None:
-    """Stop dışındaki çıkış sinyali (kapanışa göre)."""
-    if not _missing(row, ["sma"]) and row["close"] < row["sma"]:
+def exit_reason(row: Row, p: StrategyConfig) -> str | None:
+    if not missing(row, ["sma"]) and row["close"] < row["sma"]:
         return f"Trend bozuldu: kapanış {row['close']:.2f} < {p.trend_sma}g ortalama {row['sma']:.2f}"
     return None
 
 
-def trailing_stop(highest_close: float, atr_value: float, p: StrategyConfig) -> float:
-    return highest_close - p.atr_stop_mult * atr_value
+class PullbackStrategy(Strategy):
+    name = "pullback"
+
+    def features(self, df):
+        return compute_features(df, self.p)
+
+    def entry_signals(self, day, today, held):
+        sigs = [s for sym, row in today.items() if sym not in held
+                and (s := entry_signal(sym, day, row, self.p)) is not None]
+        return sorted(sigs, key=lambda s: s.score, reverse=True)
+
+    def exit_reasons(self, day, today, held):
+        out = {}
+        for sym in held:
+            if sym in today and (r := exit_reason(today[sym], self.p)):
+                out[sym] = r
+        return out
+
+    def hold_while(self):
+        return f"Kapanış {self.p.trend_sma}g ortalamanın üstünde kaldıkça"
+
+    def exit_if(self):
+        return [
+            f"İz süren stop: en yüksek kapanış - {self.p.atr_stop_mult:g} x ATR (stop asla aşağı inmez)",
+            f"Kapanış {self.p.trend_sma}g ortalamanın altına inerse ertesi açılışta sat",
+            "KAP'ta ciddi olumsuz haber gelirse yeniden değerlendir",
+        ]

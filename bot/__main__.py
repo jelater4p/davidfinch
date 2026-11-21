@@ -19,6 +19,7 @@ from .config import ROOT, load_settings
 from .data.store import PriceStore
 from .data.yahoo import YahooSource
 from .storage.db import Database
+from .strategy import make_strategy
 from .strategy.card import render_card
 
 
@@ -58,18 +59,20 @@ def cmd_backtest(args, settings, db) -> None:
     store = PriceStore(db)
     end = date.fromisoformat(args.end) if args.end else date.today()
     start = date.fromisoformat(args.start) if args.start else end - timedelta(days=365 * 2)
+    strategy = make_strategy(settings, args.strategy)
+    sizing = args.sizing or settings.sizing
     data = {}
     for sym in settings.universe():
         df = store.history(sym, end=end)
-        if len(df) > settings.strategy.trend_sma + 20:
+        if len(df) > 60:
             data[sym] = df
     if not data:
         raise SystemExit("Veri yok. Önce: python -m bot fetch --days 2000")
     bench_df = store.history(settings.benchmark, start=start, end=end)
     bench = bench_df["close"] if not bench_df.empty else None
 
-    res = run_backtest(data, settings, settings.strategy, start, end, bench)
-    print(format_report(res.metrics, f"Backtest {start} → {end} | {len(data)} hisse"))
+    res = run_backtest(data, settings, strategy, start, end, bench, sizing=sizing)
+    print(format_report(res.metrics, f"Backtest {start} → {end} | {len(data)} hisse | {strategy.name} / {sizing}"))
 
     out = Path(args.out or ROOT / "reports" / f"backtest_{start}_{end}")
     out.mkdir(parents=True, exist_ok=True)
@@ -98,6 +101,8 @@ def main() -> None:
     p_bt.add_argument("--start", help="YYYY-AA-GG (varsayılan: 2 yıl önce)")
     p_bt.add_argument("--end", help="YYYY-AA-GG (varsayılan: bugün)")
     p_bt.add_argument("--out", help="Rapor klasörü")
+    p_bt.add_argument("--strategy", choices=["momentum", "pullback"], help="Varsayılan: settings")
+    p_bt.add_argument("--sizing", choices=["equal_weight", "risk"], help="Varsayılan: settings")
     args = parser.parse_args()
 
     settings = load_settings(args.settings)

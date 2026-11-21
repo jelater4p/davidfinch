@@ -17,10 +17,10 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class RiskConfig:
     initial_capital: float = 100_000.0
-    min_cash_ratio: float = 0.30
+    min_cash_ratio: float = 0.0
     max_position_ratio: float = 0.28
     risk_per_trade: float = 0.01
-    max_open_positions: int = 6
+    max_open_positions: int = 10
 
     def validate(self) -> None:
         if self.initial_capital <= 0:
@@ -59,6 +59,19 @@ class StrategyConfig:
 
 
 @dataclass(frozen=True)
+class MomentumConfig:
+    lookback: int = 126        # ~6 ay
+    skip_days: int = 21        # son ~1 ay hariç
+    trend_sma: int = 200
+    hold_rank: int = 15        # elde tutma tamponu (alım ilk N, tutma ilk hold_rank)
+    atr_stop_mult: float = 3.0
+    atr_period: int = 14
+
+
+SIZING_MODES = ("equal_weight", "risk")
+
+
+@dataclass(frozen=True)
 class Settings:
     timezone: str = "Europe/Istanbul"
     db_path: Path = ROOT / "data" / "davidfinch.db"
@@ -68,7 +81,10 @@ class Settings:
     benchmark: str = "XU100"
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
-    strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    active_strategy: str = "momentum"
+    sizing: str = "equal_weight"   # equal_weight: her hisseye portföy/max_open_positions; risk: %risk/stop
+    pullback: StrategyConfig = field(default_factory=StrategyConfig)
+    momentum: MomentumConfig = field(default_factory=MomentumConfig)
 
     def universe(self) -> list[str]:
         symbols = []
@@ -102,6 +118,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     data = raw.get("data", {})
+    strat = raw.get("strategy", {})
     settings = Settings(
         timezone=raw.get("timezone", "Europe/Istanbul"),
         db_path=_resolve(os.environ.get("DAVIDFINCH_DB", raw.get("db_path", "data/davidfinch.db"))),
@@ -111,7 +128,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
         benchmark=data.get("benchmark", "XU100"),
         risk=RiskConfig(**raw.get("risk", {})),
         costs=CostConfig(**raw.get("costs", {})),
-        strategy=StrategyConfig(**raw.get("strategy", {})),
+        active_strategy=strat.get("active", "momentum"),
+        sizing=strat.get("sizing", "equal_weight"),
+        pullback=StrategyConfig(**strat.get("pullback", {})),
+        momentum=MomentumConfig(**strat.get("momentum", {})),
     )
     settings.risk.validate()
+    if settings.sizing not in SIZING_MODES:
+        raise ValueError(f"sizing şunlardan biri olmalı: {SIZING_MODES}")
+    if settings.active_strategy not in ("momentum", "pullback"):
+        raise ValueError("strategy.active: momentum veya pullback")
     return settings

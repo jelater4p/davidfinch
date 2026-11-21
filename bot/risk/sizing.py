@@ -101,3 +101,54 @@ def size_position(
         binding_rule=binding_rule,
         notes=notes,
     )
+
+
+def size_equal_weight(
+    *,
+    equity: float,
+    cash: float,
+    open_positions: int,
+    entry_price: float,
+    atr: float,
+    atr_mult: float,
+    risk: RiskConfig,
+    costs: CostConfig,
+) -> SizingResult:
+    """Eşit ağırlık: her hisseye portföy / max_open_positions kadar.
+
+    Stop yine ATR ile belirlenir; işlem başı risk burada sınır DEĞİL, sadece
+    raporlanır (risk_per_trade'i aşıyorsa gerekçeye not düşülür).
+    """
+    if open_positions >= risk.max_open_positions:
+        return SizingResult(False, notes=[f"Açık pozisyon sınırı dolu ({risk.max_open_positions})"])
+    if entry_price <= 0 or atr <= 0 or equity <= 0:
+        return SizingResult(False, notes=["Geçersiz fiyat/ATR/portföy değeri"])
+    stop_price = entry_price - atr * atr_mult
+    if stop_price <= 0:
+        return SizingResult(False, notes=["Stop seviyesi sıfırın altında kalıyor"])
+
+    target_ratio = min(1 / risk.max_open_positions, risk.max_position_ratio)
+    unit_cost = entry_price * (1 + costs.slippage_rate) + costs.fee(entry_price)
+    spendable = cash - equity * risk.min_cash_ratio
+    candidates = {
+        "eşit ağırlık hedefi": math.floor(equity * target_ratio / unit_cost),
+        "mevcut nakit": math.floor(max(spendable, 0) / unit_cost),
+    }
+    binding_rule = min(candidates, key=candidates.get)
+    qty = candidates[binding_rule]
+    if qty < 1:
+        return SizingResult(False, entry_price=entry_price, stop_price=stop_price, binding_rule=binding_rule,
+                            notes=[f"'{binding_rule}' nedeniyle 1 lot bile alınamıyor"])
+    per_share_loss = (entry_price - stop_price) + entry_price * costs.slippage_rate \
+        + stop_price * costs.slippage_rate + costs.fee(entry_price) + costs.fee(stop_price)
+    notional = qty * entry_price
+    risk_amount = qty * per_share_loss
+    notes = [
+        f"Stop = giriş {entry_price:.2f} - {atr_mult} x ATR {atr:.2f} = {stop_price:.2f}",
+        f"Bağlayıcı kural: {binding_rule} → {qty} lot (portföyün %{100 * notional / equity:.1f}'i)",
+        f"Stop olursa kayıp ≈ {risk_amount:,.0f} TL = portföyün %{100 * risk_amount / equity:.2f}'i",
+    ]
+    if risk_amount > equity * risk.risk_per_trade * 1.0001:
+        notes.append(f"Not: işlem başı risk hedefi (%{100 * risk.risk_per_trade:g}) aşılıyor")
+    return SizingResult(True, qty=qty, entry_price=entry_price, stop_price=stop_price, notional=notional,
+                        risk_amount=risk_amount, binding_rule=binding_rule, notes=notes)

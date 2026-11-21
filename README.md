@@ -33,15 +33,19 @@ python -m bot backtest --start 2022-01-01   # rapor: reports/ klasörüne
 pytest                        # testler
 ```
 
-## Strateji: trend içinde geri çekilmeden al
+## Aktif strateji: momentum / güç rotasyonu (`bot/strategy/momentum.py`)
 
-Giriş (kapanış sonrası karar, ertesi açılışta işlem): kapanış > SMA(trend) ve SMA yükseliyor,
-son 3 günde RSI < eşik, bugün kapanış > dünkü kapanış, hacim >= çarpan x 20g ortalama.
-Çıkış: iz süren ATR stop veya kapanış < SMA(trend).
+Ayın ilk işlem günü kapanışından sonra evren sıralanır: skor = son 126 günün getirisi
+(son 21 gün hariç); uygunluk = kapanış > 200g ortalama ve skor > 0. Sıralamada ilk
+`hold_rank` (15) dışına düşen ya da uygunluğunu kaybeden hisse ertesi açılışta satılır,
+boşalan yerler en güçlü adaylarla doldurulur. Aylar arasında iz süren ATR stop (3 x ATR) korur.
 
-Öğrenilen parametreler: `trend_sma` {50,100,200}, `rsi_entry` 30–50, `atr_stop_mult` 1.5–3.5,
-`volume_mult` 1.0–2.0. Varsayılanlar (100 / 40 / 2.5 / 1.2) tüm dönem verisine bakılarak seçildi;
-bu iyimser bir seçimdir, dürüst değerlendirme 3. aşamadaki walk-forward ile yapılacak.
+Lot yöntemi (`strategy.sizing`):
+- `equal_weight`: her hisseye portföy / 10. İşlem başı risk sınır değil, kartta raporlanır.
+- `risk`: lot = (portföy x %1) / stop mesafesi.
+
+İkincil strateji (`pullback`, pasif): trend içinde geri çekilmeden al.
+`python -m bot backtest --strategy pullback` ile çalıştırılabilir.
 
 ## Sabit risk kuralları (`settings.yaml` → `risk`)
 

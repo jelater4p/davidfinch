@@ -11,8 +11,9 @@ from datetime import date
 import pandas as pd
 
 from ..broker.paper import PaperBroker
-from ..config import Settings, StrategyConfig
+from ..config import Settings
 from ..engine import Engine, Rows, build_rows
+from ..strategy.base import Strategy
 from ..storage.db import Database
 from .metrics import compute_metrics
 
@@ -23,20 +24,20 @@ class BacktestResult:
     trades: pd.DataFrame
     orders: pd.DataFrame
     metrics: dict
-    params: StrategyConfig
+    params: dict
     start: date
     end: date
 
 
-def run_backtest(data: dict[str, pd.DataFrame], settings: Settings, params: StrategyConfig,
+def run_backtest(data: dict[str, pd.DataFrame], settings: Settings, strategy: Strategy,
                  start: date, end: date, benchmark: pd.Series | None = None,
-                 rows: Rows | None = None) -> BacktestResult:
+                 rows: Rows | None = None, sizing: str | None = None) -> BacktestResult:
     """data: tüm geçmiş (gösterge ısınması için start öncesini de içermeli)."""
-    rows = rows if rows is not None else build_rows(data, params)
+    rows = rows if rows is not None else build_rows(data, strategy)
     db = Database(":memory:")
     try:
         broker = PaperBroker(db, settings.risk, settings.costs)
-        engine = Engine(broker, settings, params, rows)
+        engine = Engine(broker, settings, strategy, rows, sizing=sizing)
         days = sorted({d for r in rows.values() for d in r if start <= d <= end})
         for day in days:
             engine.run_day(day)
@@ -59,7 +60,7 @@ def run_backtest(data: dict[str, pd.DataFrame], settings: Settings, params: Stra
     metrics = compute_metrics(equity, trades, settings.risk.initial_capital, bench)
     metrics["open_positions_at_end"] = open_positions
     metrics["exposure"] = exposure
-    return BacktestResult(equity, trades, orders, metrics, params, start, end)
+    return BacktestResult(equity, trades, orders, metrics, strategy.param_dict(), start, end)
 
 
 def with_params(base: StrategyConfig, **changes) -> StrategyConfig:

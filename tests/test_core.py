@@ -14,7 +14,7 @@ from bot.market.bist import round_to_tick, tick_size
 from bot.risk.sizing import size_position
 from bot.storage.db import Database
 
-RISK = RiskConfig()
+RISK = RiskConfig(min_cash_ratio=0.30, max_open_positions=6)   # eski kurallarla senaryo testleri
 NO_COST = CostConfig(commission_rate=0, bsmv_rate=0, slippage_rate=0)
 COSTS = CostConfig()
 
@@ -88,7 +88,7 @@ def test_sizing_risk_rule_binds():
 
 def test_sizing_position_cap_binds_with_high_risk():
     # %5 risk -> 1000 lot = 62k TL; tek hisse sınırı %28 = 28k -> 451 lot
-    risk5 = RiskConfig(risk_per_trade=0.05)
+    risk5 = RiskConfig(risk_per_trade=0.05, min_cash_ratio=0.30)
     r = size_position(equity=100_000, cash=100_000, open_positions=0, entry_price=62, atr=2,
                       atr_mult=2.5, risk=risk5, costs=NO_COST)
     assert r.qty == 451 and r.binding_rule == "tek hisse sınırı"
