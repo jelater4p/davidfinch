@@ -8,7 +8,7 @@ geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 | Aşama | İçerik | Durum |
 |---|---|---|
 | 1 | Ayarlar, SQLite, Yahoo verisi, PaperBroker, risk kuralları | ✅ |
-| 2 | Strateji, gerekçe kartı, backtest | ⏳ |
+| 2 | Strateji, gerekçe kartı, backtest | ✅ |
 | 3 | Walk-forward + haftalık öğrenme | ⏳ |
 | 4 | KAP + Claude filtresi | ⏳ |
 | 5 | Telegram bot + zamanlayıcı | ⏳ |
@@ -27,9 +27,21 @@ cp .env.example .env
 ```bash
 python -m bot fetch           # tüm BIST100 günlük verisini çek
 python -m bot fetch THYAO     # tek hisse
+python -m bot fetch --days 2200   # backtest için ~6 yıllık geçmiş
 python -m bot status          # cüzdan durumu
+python -m bot backtest --start 2022-01-01   # rapor: reports/ klasörüne
 pytest                        # testler
 ```
+
+## Strateji: trend içinde geri çekilmeden al
+
+Giriş (kapanış sonrası karar, ertesi açılışta işlem): kapanış > SMA(trend) ve SMA yükseliyor,
+son 3 günde RSI < eşik, bugün kapanış > dünkü kapanış, hacim >= çarpan x 20g ortalama.
+Çıkış: iz süren ATR stop veya kapanış < SMA(trend).
+
+Öğrenilen parametreler: `trend_sma` {50,100,200}, `rsi_entry` 30–50, `atr_stop_mult` 1.5–3.5,
+`volume_mult` 1.0–2.0. Varsayılanlar (100 / 40 / 2.5 / 1.2) tüm dönem verisine bakılarak seçildi;
+bu iyimser bir seçimdir, dürüst değerlendirme 3. aşamadaki walk-forward ile yapılacak.
 
 ## Sabit risk kuralları (`settings.yaml` → `risk`)
 

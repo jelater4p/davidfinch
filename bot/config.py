@@ -50,8 +50,8 @@ class CostConfig:
 
 @dataclass(frozen=True)
 class StrategyConfig:
-    trend_sma: int = 50
-    rsi_entry: float = 35
+    trend_sma: int = 100
+    rsi_entry: float = 40
     atr_stop_mult: float = 2.5
     volume_mult: float = 1.2
     atr_period: int = 14
@@ -65,6 +65,7 @@ class Settings:
     universe_file: Path = ROOT / "data" / "bist100.txt"
     data_source: str = "yahoo"
     history_days: int = 400
+    benchmark: str = "XU100"
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
@@ -107,6 +108,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
         universe_file=_resolve(raw.get("universe_file", "data/bist100.txt")),
         data_source=data.get("source", "yahoo"),
         history_days=int(data.get("history_days", 400)),
+        benchmark=data.get("benchmark", "XU100"),
         risk=RiskConfig(**raw.get("risk", {})),
         costs=CostConfig(**raw.get("costs", {})),
         strategy=StrategyConfig(**raw.get("strategy", {})),
