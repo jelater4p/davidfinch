@@ -41,3 +41,11 @@ strategy:
     volume_mult: 1.2
     atr_period: 14
     rsi_period: 14
+
+news:                      # KAP filtresi — SADECE ciddi olumsuz haberde alım engellenir
+  enabled: true
+  source: kap_web          # kap_web (KAP sitesi, resmi olmayan yol) | ileride: matriks
+  lookback_days: 7         # son 7 takvim günü (~5 işlem günü)
+  min_confidence: 0.6      # Claude'un "ciddi" kararındaki en düşük güven
+  model: claude-opus-5-5
+  effort: low              # sınıflandırma için yeterli, maliyeti düşük tutar

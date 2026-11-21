@@ -5,6 +5,8 @@
   backtest  Stratejiyi geçmiş veride çalıştırıp rapor üretir
   walkforward  Aylık öğrenme döngüsünü geçmişte sınar (görmediği veride)
   learn     Aylık parametre güncellemesi (canlı paper; ayda bir)
+  kap-check KAP bağlantısını ve yanıt biçimini teşhis eder (VPS'te bir kez çalıştırın)
+  news      Bir hissenin son bildirimlerini çeker, Claude ile analiz edip gösterir
 """
 from __future__ import annotations
 
@@ -147,6 +149,48 @@ def cmd_learn(args, settings, db) -> None:
         print(dec.explanation)
 
 
+def cmd_kap_check(args, settings, db) -> None:
+    from .news.kap import KapWebSource, _extract_list, parse_items
+
+    raw = KapWebSource().raw_sample()
+    items = _extract_list(raw)
+    print(f"Yanıt tipi: {type(raw).__name__}, liste uzunluğu: {len(items)}")
+    if isinstance(raw, dict):
+        print("Üst seviye anahtarlar:", list(raw)[:20])
+    if items:
+        print("İlk kaydın anahtarları:", list(items[0])[:30])
+        print("İlk kayıt (kısaltılmış):", json.dumps(items[0], ensure_ascii=False)[:1500])
+    parsed = parse_items(items)
+    print(f"Çözümlenen bildirim (hisse bazında): {len(parsed)}")
+    for d in parsed[:5]:
+        print(f"  {d.published_at:%Y-%m-%d %H:%M} {d.symbol:6} {d.subject[:40]:40} {d.title[:50]}")
+    if parsed:
+        dates = sorted(d.published_at for d in parsed)
+        print(f"Kapsanan aralık: {dates[0]} → {dates[-1]}")
+    else:
+        print("UYARI: Hiç bildirim çözümlenemedi; bot/news/kap.py içindeki FIELD_CANDIDATES güncellenmeli.")
+
+
+def cmd_news(args, settings, db) -> None:
+    from .news import make_news_filter
+
+    flt = make_news_filter(settings, db)
+    if flt is None:
+        raise SystemExit("news.enabled = false")
+    today = date.today()
+    flt.refresh(today, [args.symbol.upper()])
+    for w in flt.warnings:
+        print(w)
+    rows = flt.store.for_symbol(args.symbol.upper(), today - timedelta(days=settings.news.lookback_days))
+    if not rows:
+        print("Son günlerde bildirim yok.")
+    for r in rows:
+        flag = {1: "CİDDİ OLUMSUZ", 0: "normal", None: "analiz yok"}[r["severe"]]
+        print(f"[{r['published_at'][:16]}] {flag:13} {r['subject'] or ''} — {r['title'] or ''}")
+        if r["reason"]:
+            print(f"    {r['category']} (güven {r['confidence']:.2f}): {r['reason']}")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="python -m bot")
@@ -169,13 +213,17 @@ def main() -> None:
     p_wf.add_argument("--workers", type=int, help="Paralel işlem sayısı (varsayılan: CPU sayısı)")
     p_learn = sub.add_parser("learn", help="Aylık parametre güncellemesi")
     p_learn.add_argument("--force", action="store_true", help="Bu ay yapılmış olsa da tekrar çalıştır")
+    sub.add_parser("kap-check", help="KAP bağlantı teşhisi")
+    p_news = sub.add_parser("news", help="Hisse bildirimlerini analiz et")
+    p_news.add_argument("symbol")
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
     db = Database(settings.db_path)
     try:
         {"fetch": cmd_fetch, "status": cmd_status, "backtest": cmd_backtest,
-         "walkforward": cmd_walkforward, "learn": cmd_learn}[args.command](args, settings, db)
+         "walkforward": cmd_walkforward, "learn": cmd_learn,
+         "kap-check": cmd_kap_check, "news": cmd_news}[args.command](args, settings, db)
     finally:
         db.close()
 
