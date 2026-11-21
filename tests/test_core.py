@@ -33,7 +33,8 @@ def bar(sym, day, o, h, l, c, v=1e6):
 # ---------------------------------------------------------------- ayarlar
 def test_settings_load_and_universe():
     s = load_settings()
-    assert s.risk.min_cash_ratio == 0.30
+    assert s.risk.min_cash_ratio == 0.0
+    assert s.risk.max_open_positions == 10
     assert s.risk.max_position_ratio == 0.28
     u = s.universe()
     assert "THYAO" in u and len(u) == len(set(u))

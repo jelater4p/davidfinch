@@ -46,10 +46,10 @@ bu iyimser bir seçimdir, dürüst değerlendirme 3. aşamadaki walk-forward ile
 ## Sabit risk kuralları (`settings.yaml` → `risk`)
 
 - Başlangıç sermayesi 100.000 TL
-- En az %30 nakit
+- Nakit zorunluluğu yok (paranın tamamı hisselere girebilir)
 - Tek hisse en fazla portföyün %28'i
 - İşlem başı risk %1 (stop olunursa en fazla ~1.000 TL kayıp)
-- En fazla 6 açık pozisyon
+- En fazla 10 açık pozisyon
 - Lot = (portföy × risk) / (giriş − ATR stop); yukarıdaki sınırlar sırayla uygulanır
 
 ## Paper broker gerçekçilik kuralları

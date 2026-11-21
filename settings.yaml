@@ -12,10 +12,10 @@ data:
 
 risk:                      # SABİT KURALLAR — bot bunları asla kendisi değiştiremez
   initial_capital: 100000  # TL
-  min_cash_ratio: 0.30     # portföyün en az %30'u nakit
-  max_position_ratio: 0.28 # tek hisse en fazla portföyün %28'i (%70 x %40)
+  min_cash_ratio: 0.0      # nakit zorunluluğu yok (kullanıcı kararı)
+  max_position_ratio: 0.28 # tek hisse en fazla portföyün %28'i
   risk_per_trade: 0.01     # stop olunursa kayıp en fazla portföyün %1'i
-  max_open_positions: 6
+  max_open_positions: 10
 
 costs:
   commission_rate: 0.002   # binde 2 (temkinli varsayım; kurumun oranını öğrenince güncelle)
