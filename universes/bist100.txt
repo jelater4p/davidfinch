@@ -1,6 +1,7 @@
 # BIST100 evreni — her satıra bir hisse kodu (Yahoo'da .IS eki otomatik eklenir)
 # DİKKAT: Endeks bileşimi dönemsel olarak değişir ve bazı şirketler kod değiştirir.
 # Bu liste yaklaşık bir başlangıçtır; borsaistanbul.com'daki güncel listeyle doğrulayın.
+# EFORC ve TUREG çıkarıldı: Yahoo Finance bu kodlar için veri döndürmüyor (Kasım 2026).
 AEFES
 AGHOL
 AKBNK
@@ -26,7 +27,6 @@ CWENE
 DOAS
 DOHOL
 ECILC
-EFORC
 EGEEN
 EKGYO
 ENERY
@@ -82,7 +82,6 @@ TSKB
 TTKOM
 TTRAK
 TUPRS
-TUREG
 ULKER
 VAKBN
 VESTL
