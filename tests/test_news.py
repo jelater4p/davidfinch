@@ -232,3 +232,18 @@ def test_kap_all_endpoints_fail_raises(monkeypatch):
     monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
     with pytest.raises(NewsSourceError):
         kap.KapWebSource(session=_KapSession({})).fetch(["X"], date(2026, 11, 18), date(2026, 11, 20))
+
+
+def test_kap_market_wide_announcements_are_ignored(monkeypatch):
+    from bot.news import kap
+    monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
+    items = [
+        {"disclosureIndex": 1, "stockCodes": "THYAO, ASELS, GARAN, AKBNK, EREGL", "publishDate": "20.11.2026 23:33:00",
+         "kapTitle": "MERKEZİ KAYIT KURULUŞU A.Ş.", "subject": "SPK İşlem Yasağı Nedeniyle Pay Duyurusu"},
+        {"disclosureIndex": 2, "stockCodes": "THYAO", "publishDate": "20.11.2026 10:00:00",
+         "kapTitle": "BORSA İSTANBUL A.Ş.", "subject": "İşlem Sırası Kapatılması"},
+    ]
+    ep = kap.ENDPOINTS[0]
+    sess = _KapSession({(ep.method, ep.url): _Resp(200, items)})
+    got = kap.KapWebSource(session=sess).fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20))
+    assert [d.disclosure_id for d in got] == ["2"]      # piyasa geneli liste atlandı, şirkete özel kaldı
