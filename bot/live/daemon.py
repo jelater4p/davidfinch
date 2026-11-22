@@ -77,6 +77,8 @@ class Daemon:
             return
         self.db.set_state("evening_done", now.date().isoformat())
         if res.status == "ok":
+            for msg in res.trade_messages:      # her alış/satış ayrı mesaj
+                self.notifier.send(msg)
             self.notifier.send(res.message + "\n\n" + "\n\n".join(res.sections))
             self.backup(now)
 

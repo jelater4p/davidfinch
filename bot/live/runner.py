@@ -38,6 +38,7 @@ class EveningResult:
     status: str                       # "ok" | "no_data" | "already_done"
     message: str = ""
     sections: list[str] = field(default_factory=list)
+    trade_messages: list[str] = field(default_factory=list)   # her alış/satış için ayrı mesaj
 
 
 class LiveRunner:
@@ -136,7 +137,7 @@ class LiveRunner:
             all_orders = res.orders          # sadece son günün emirleri hâlâ bekliyor
             all_skipped = res.skipped
 
-        sections += self._format_fills(all_fills)
+        trade_messages = self._trade_messages(all_fills)
         for card in all_orders:
             sections.append(("📝 Yarın açılışta:\n" if card.get("type") == "entry" else "📤 Yarın açılışta:\n")
                             + render_card(card))
@@ -152,24 +153,23 @@ class LiveRunner:
         if self.paused():
             sections.append("⏸ Bot durdurulmuş durumda: yeni alım yapılmıyor (stop ve çıkışlar çalışıyor). /devam")
         sections.append(self.summary(day))
-        return EveningResult("ok", f"📊 {day:%d.%m.%Y} gün sonu", sections)
+        return EveningResult("ok", f"📊 {day:%d.%m.%Y} gün sonu", sections, trade_messages)
 
-    def _format_fills(self, fills) -> list[str]:
-        if not fills:
-            return []
-        lines = []
+    def _trade_messages(self, fills) -> list[str]:
+        """Her gerçekleşen işlem için ayrı mesaj (alışta beklenti, satışta sonuç ve neden)."""
+        from .trade_notes import entry_note, exit_note
+
+        out = []
         for f in fills:
-            kind = {"BUY": "AL", "SELL": "SAT"}[f.side]
-            tag = " (STOP)" if f.order_type == "STOP" else ""
-            lines.append(f"• {f.date:%d.%m} {kind}{tag} {f.symbol} {f.qty} lot @ {f.price:.2f} (masraf {f.fees:.2f} TL)"
-                         + (f" — {f.note}" if f.note else ""))
-        for f in fills:
-            if f.side == "SELL":
-                t = self.db.query_one("SELECT pnl, pnl_pct, exit_reason FROM trades WHERE exit_order_id = ?",
-                                      (f.order_id,))
-                if t:
-                    lines.append(f"  {f.symbol} sonuç: {t['pnl']:+,.0f} TL (%{100 * t['pnl_pct']:+.1f}) — {t['exit_reason']}")
-        return ["✅ Gerçekleşenler:\n" + "\n".join(lines)]
+            if f.side == "BUY":
+                snap = self.db.query_one("SELECT equity FROM equity_snapshots WHERE date = ?", (f.date.isoformat(),))
+                equity = snap["equity"] if snap else self.settings.risk.initial_capital
+                out.append(entry_note(self.db, f, equity, self.settings.expectations))
+            else:
+                note = exit_note(self.db, f)
+                if note:
+                    out.append(note)
+        return out
 
     # ------------------------------------------------------------------ rapor
     def summary(self, day: date) -> str:

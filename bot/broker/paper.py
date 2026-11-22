@@ -270,10 +270,12 @@ class PaperBroker(Broker):
         pnl = (exit_unit - pos["avg_cost"]) * qty
         conn.execute(
             """INSERT INTO trades (symbol, qty, entry_date, entry_price, exit_date, exit_price,
-                                   pnl, pnl_pct, exit_reason, entry_order_id, exit_order_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                   pnl, pnl_pct, exit_reason, entry_order_id, exit_order_id,
+                                   stop_price, highest_close)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (pos["symbol"], qty, pos["entry_date"], pos["avg_cost"], day.isoformat(), exit_unit,
-             pnl, exit_unit / pos["avg_cost"] - 1, exit_reason, pos["entry_order_id"], order_id),
+             pnl, exit_unit / pos["avg_cost"] - 1, exit_reason, pos["entry_order_id"], order_id,
+             pos["stop_price"], pos["highest_close"]),
         )
         if qty >= pos["qty"]:
             conn.execute("DELETE FROM positions WHERE symbol = ?", (pos["symbol"],))

@@ -251,7 +251,12 @@ def cmd_evening(args, settings, db) -> None:
     res = _runner(settings, db).evening(day, fetch=not args.no_fetch)
     text = res.message + ("\n\n" + "\n\n".join(res.sections) if res.sections else "")
     if args.send:
-        _notifier().send(text)
+        notifier = _notifier()
+        for msg in res.trade_messages:
+            notifier.send(msg)
+        notifier.send(text)
+    for msg in res.trade_messages:
+        print(msg + "\n")
     print(text)
 
 
