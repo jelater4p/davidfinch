@@ -11,9 +11,10 @@ UYARI:
     yanıttaki kayıtlar {"disclosureBasic": {"disclosureIndex": ...}, ...} biçimindedir.
     Sitenin sunucu tarafının kullandığı kapsitebackend.mkk.com.tr dışarıdan erişilemez.
     Tarih aralığıyla sorgu, günün tüm bildirimlerini getirdiği için ana akıştan iyidir.
-  * Hangi adresin çalıştığı ve yanıt alan adları geliştirme ortamında doğrulanamadı.
-    ENDPOINTS sırayla denenir, çalışan hatırlanır. VPS'te `python -m bot kap-check`
-    her adayı dener ve ham yanıtı gösterir; alan eşlemesi (FIELD_CANDIDATES) esnektir.
+  * VPS'te doğrulanan yanıt kaydı (Kasım 2026): publishDate "22.11.2026 14:14:09",
+    kapTitle (şirket adı), subject, summary, stockCodes ("ALKLC" veya virgülle birden çok),
+    disclosureIndex. ENDPOINTS sırayla denenir, çalışan hatırlanır; site değişirse
+    `python -m bot kap-check` her adayı dener ve ham yanıtı gösterir.
 """
 from __future__ import annotations
 
@@ -56,8 +57,9 @@ class Endpoint:
 
 
 ENDPOINTS = [
-    Endpoint("sorgu (GG.AA.YYYY)", "POST", QUERY_URL, "%d.%m.%Y"),
+    # VPS'te doğrulandı (Kasım 2026): YYYY-AA-GG çalışıyor, GG.AA.YYYY 500 döndürüyor.
     Endpoint("sorgu (YYYY-AA-GG)", "POST", QUERY_URL, "%Y-%m-%d"),
+    Endpoint("sorgu (GG.AA.YYYY)", "POST", QUERY_URL, "%d.%m.%Y"),
     Endpoint("ana akış", "GET", BASE_URL + "/tr/api/disclosure/list/main"),
 ]
 HEADERS = {
