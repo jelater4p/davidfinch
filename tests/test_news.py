@@ -1,4 +1,6 @@
 import json
+
+import pytest
 from datetime import date, datetime
 from types import SimpleNamespace
 
@@ -156,3 +158,58 @@ def test_unknown_analysis_is_retried_next_refresh():
     store.save([d])
     store.save_analysis(d, Analysis(None, "yok", "hata", 0.0, "m"))
     assert [x.key for x in store.unanalyzed()] == [d.key]
+
+
+# ---------------------------------------------------------------- KAP adres yedekleme
+class _Resp:
+    def __init__(self, status, data=None):
+        self.status_code, self._data = status, data
+
+    def raise_for_status(self):
+        import requests
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} Client Error")
+
+    def json(self):
+        return self._data
+
+
+class _KapSession:
+    def __init__(self, routes):
+        self.routes, self.calls = routes, []
+
+    def request(self, method, url, headers=None, json=None, timeout=None):
+        self.calls.append((method, url, json))
+        return self.routes.get((method, url), _Resp(405))
+
+
+def test_kap_falls_back_and_remembers_working_endpoint(monkeypatch):
+    from bot.news import kap
+    monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
+    item = {"disclosureIndex": 7, "stockCodes": "THYAO", "publishDate": "20.11.2026 18:05:00",
+            "subject": "Özel Durum Açıklaması", "title": "THY"}
+    good = kap.ENDPOINTS[2]   # ana akış (backend) çalışıyor, sorgular 405 veriyor
+    sess = _KapSession({(good.method, good.url): _Resp(200, {"data": [item]})})
+    src = kap.KapWebSource(session=sess)
+    got = src.fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20))
+    assert [d.symbol for d in got] == ["THYAO"]
+    assert src._working == good and len(sess.calls) == 3
+    # İkinci çağrıda (farklı tarih) önce çalışan adres denenir
+    src.fetch(["THYAO"], date(2026, 11, 19), date(2026, 11, 20))
+    assert sess.calls[3][1] == good.url
+
+
+def test_kap_dated_query_sends_date_body_and_accepts_empty(monkeypatch):
+    from bot.news import kap
+    monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
+    ep = kap.ENDPOINTS[0]
+    sess = _KapSession({(ep.method, ep.url): _Resp(200, [])})
+    assert kap.KapWebSource(session=sess).fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20)) == []
+    assert sess.calls[0][2] == {"fromDate": "18.11.2026", "toDate": "20.11.2026", "memberTypes": ["IGS", "DDK"]}
+
+
+def test_kap_all_endpoints_fail_raises(monkeypatch):
+    from bot.news import kap
+    monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
+    with pytest.raises(NewsSourceError):
+        kap.KapWebSource(session=_KapSession({})).fetch(["X"], date(2026, 11, 18), date(2026, 11, 20))

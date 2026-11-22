@@ -153,25 +153,38 @@ def cmd_learn(args, settings, db) -> None:
 
 
 def cmd_kap_check(args, settings, db) -> None:
-    from .news.kap import KapWebSource, _extract_list, parse_items
+    from .news.kap import KapWebSource, parse_items
 
-    raw = KapWebSource().raw_sample()
-    items = _extract_list(raw)
-    print(f"Yanıt tipi: {type(raw).__name__}, liste uzunluğu: {len(items)}")
-    if isinstance(raw, dict):
-        print("Üst seviye anahtarlar:", list(raw)[:20])
-    if items:
-        print("İlk kaydın anahtarları:", list(items[0])[:30])
-        print("İlk kayıt (kısaltılmış):", json.dumps(items[0], ensure_ascii=False)[:1500])
-    parsed = parse_items(items)
-    print(f"Çözümlenen bildirim (hisse bazında): {len(parsed)}")
-    for d in parsed[:5]:
-        print(f"  {d.published_at:%Y-%m-%d %H:%M} {d.symbol:6} {d.subject[:40]:40} {d.title[:50]}")
-    if parsed:
-        dates = sorted(d.published_at for d in parsed)
-        print(f"Kapsanan aralık: {dates[0]} → {dates[-1]}")
-    else:
-        print("UYARI: Hiç bildirim çözümlenemedi; bot/news/kap.py içindeki FIELD_CANDIDATES güncellenmeli.")
+    until = date.today()
+    since = until - timedelta(days=2)
+    print(f"KAP adresleri deneniyor ({since} → {until}); istekler arası 5 sn beklenir...\n")
+    any_ok = False
+    for res in KapWebSource().diagnose(since, until):
+        ep = res["endpoint"]
+        print(f"== {ep.name}: {ep.method} {ep.url}")
+        if not res["ok"]:
+            print(f"   HATA: {res['error']}\n")
+            continue
+        payload, items = res["payload"], res["items"]
+        print(f"   Yanıt tipi: {type(payload).__name__}, liste uzunluğu: {len(items)}")
+        if isinstance(payload, dict):
+            print("   Üst seviye anahtarlar:", list(payload)[:20])
+        if items:
+            print("   İlk kaydın anahtarları:", list(items[0])[:30])
+            print("   İlk kayıt:", json.dumps(items[0], ensure_ascii=False)[:1200])
+        else:
+            print("   Ham yanıt:", json.dumps(payload, ensure_ascii=False)[:600])
+        parsed = parse_items(items)
+        print(f"   Çözümlenen bildirim (hisse bazında): {len(parsed)}")
+        for d in parsed[:5]:
+            print(f"     {d.published_at:%Y-%m-%d %H:%M} {d.symbol:6} {d.subject[:35]:35} {d.title[:45]}")
+        if parsed:
+            any_ok = True
+            dates = sorted(d.published_at for d in parsed)
+            print(f"   Kapsanan aralık: {dates[0]} → {dates[-1]}")
+        print()
+    print("SONUÇ:", "En az bir adres çalışıyor." if any_ok else
+          "Hiçbir adresten bildirim çözümlenemedi; bu çıktıyı geliştiriciye gönderin.")
 
 
 def cmd_news(args, settings, db) -> None:

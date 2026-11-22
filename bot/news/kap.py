@@ -5,15 +5,21 @@ UYARI:
     kullandığı veri adresleri kullanılır; bu, KAP'ın izin verdiği bir kullanım
     değildir ve site değişirse kırılabilir. Kullanıcı bunu bilerek seçmiştir.
   * Saygılı kullanım: günde birkaç istek, istekler arası bekleme, önbellek.
-  * Yanıt alanlarının adları geliştirme ortamında doğrulanamadı. Alan eşlemesi
-    esnek tutuldu (FIELD_CANDIDATES). VPS'te `python -m bot kap-check` ham yanıtı
-    gösterir; eşleme gerekirse buradan güncellenir.
+  * Sitenin kendi kodundan: veriler www.kap.org.tr'den değil, sitenin sunucu tarafının
+    kullandığı kapsitebackend.mkk.com.tr'den gelir. Bildirim sorgulama sayfası
+    POST .../api/disclosure/members/byCriteria  gövde: {"fromDate","toDate","memberTypes"}
+    biçimindedir (tarihler GG.AA.YYYY). Tarih aralığıyla sorgu, günün tüm bildirimlerini
+    getirdiği için ana sayfa akışından (list/main) daha güvenilirdir.
+  * Hangi adresin çalıştığı ve yanıt alan adları geliştirme ortamında doğrulanamadı.
+    ENDPOINTS sırayla denenir, çalışan hatırlanır. VPS'te `python -m bot kap-check`
+    her adayı dener ve ham yanıtı gösterir; alan eşlemesi (FIELD_CANDIDATES) esnektir.
 """
 from __future__ import annotations
 
 import json
 import logging
 import time
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
 
@@ -24,8 +30,30 @@ from .base import Disclosure, NewsSource, NewsSourceError
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://www.kap.org.tr"
-LIST_PATH = "/tr/api/disclosure/list/main"     # sitenin ana sayfa bildirim akışı
+BACKEND_URL = "https://kapsitebackend.mkk.com.tr"     # sitenin SERVER_BASE_URL değeri
 DETAIL_URL = BASE_URL + "/tr/Bildirim/{id}"
+MEMBER_TYPES = ["IGS", "DDK"]    # sitenin varsayılan şirket filtresi (IGS: işlem gören şirketler)
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    name: str
+    method: str          # GET | POST
+    url: str
+    dated: bool          # True: tarih aralığıyla sorgu (POST gövdesi)
+
+    def body(self, since: date, until: date) -> dict | None:
+        if not self.dated:
+            return None
+        return {"fromDate": f"{since:%d.%m.%Y}", "toDate": f"{until:%d.%m.%Y}", "memberTypes": MEMBER_TYPES}
+
+
+ENDPOINTS = [
+    Endpoint("sorgu (backend)", "POST", BACKEND_URL + "/tr/api/disclosure/members/byCriteria", True),
+    Endpoint("sorgu (site)", "POST", BASE_URL + "/tr/api/disclosure/members/byCriteria", True),
+    Endpoint("ana akış (backend)", "GET", BACKEND_URL + "/tr/api/disclosure/list/main", False),
+    Endpoint("ana akış (site)", "GET", BASE_URL + "/tr/api/disclosure/list/main", False),
+]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; davidfinch-paper-bot)",
     "Accept": "application/json",
@@ -113,39 +141,65 @@ def _extract_list(payload: Any) -> list[dict]:
 class KapWebSource(NewsSource):
     name = "kap_web"
 
-    def __init__(self, session: requests.Session | None = None, timeout: float = 30.0):
+    def __init__(self, session: requests.Session | None = None, timeout: float = 30.0,
+                 endpoints: list[Endpoint] | None = None):
         self.session = session or requests.Session()
         self.timeout = timeout
+        self.endpoints = endpoints or ENDPOINTS
+        self._working: Endpoint | None = None
         self._last_request = 0.0
-        self._list_cache: tuple[float, list[dict]] | None = None
+        self._cache: dict[tuple, tuple[float, list[dict]]] = {}
 
-    def _get_json(self, path: str) -> Any:
+    def _request(self, ep: Endpoint, since: date, until: date) -> Any:
         wait = MIN_SECONDS_BETWEEN_REQUESTS - (time.monotonic() - self._last_request)
         if wait > 0:
             time.sleep(wait)
         self._last_request = time.monotonic()
-        try:
-            r = self.session.get(BASE_URL + path, headers=HEADERS, timeout=self.timeout)
-            r.raise_for_status()
-            return r.json()
-        except (requests.RequestException, json.JSONDecodeError) as exc:
-            raise NewsSourceError(f"KAP isteği başarısız: {exc}") from exc
+        headers = dict(HEADERS, **({"Content-Type": "application/json"} if ep.method == "POST" else {}))
+        r = self.session.request(ep.method, ep.url, headers=headers, json=ep.body(since, until),
+                                 timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
-    def raw_sample(self) -> Any:
-        """Teşhis: ham yanıtı döndürür (kap-check komutu için)."""
-        return self._get_json(LIST_PATH)
+    def diagnose(self, since: date, until: date) -> list[dict]:
+        """Teşhis (kap-check): her adayı dener, sonucu ve ham örneği döndürür."""
+        out = []
+        for ep in self.endpoints:
+            info: dict[str, Any] = {"endpoint": ep}
+            try:
+                payload = self._request(ep, since, until)
+                items = _extract_list(payload)
+                info.update(ok=True, payload=payload, items=items)
+            except (requests.RequestException, json.JSONDecodeError) as exc:
+                info.update(ok=False, error=str(exc)[:300])
+            out.append(info)
+        return out
 
-    def _list(self) -> list[dict]:
-        if self._list_cache and time.monotonic() - self._list_cache[0] < LIST_CACHE_SECONDS:
-            return self._list_cache[1]
-        items = _extract_list(self._get_json(LIST_PATH))
-        self._list_cache = (time.monotonic(), items)
-        return items
+    def _items(self, since: date, until: date) -> list[dict]:
+        key = (since, until)
+        cached = self._cache.get(key)
+        if cached and time.monotonic() - cached[0] < LIST_CACHE_SECONDS:
+            return cached[1]
+        candidates = [self._working] if self._working else []
+        candidates += [ep for ep in self.endpoints if ep is not self._working]
+        errors = []
+        for ep in candidates:
+            try:
+                items = _extract_list(self._request(ep, since, until))
+            except (requests.RequestException, json.JSONDecodeError) as exc:
+                errors.append(f"{ep.name}: {str(exc)[:120]}")
+                continue
+            if ep.dated or items:          # tarihli sorguda boş liste geçerli bir cevaptır
+                if self._working is not ep:
+                    log.info("KAP: çalışan adres %s (%s)", ep.name, ep.url)
+                self._working = ep
+                self._cache[key] = (time.monotonic(), items)
+                return items
+            errors.append(f"{ep.name}: liste bulunamadı")
+        raise NewsSourceError("KAP isteği başarısız — " + " | ".join(errors))
 
     def fetch(self, symbols: list[str], since: date, until: date) -> list[Disclosure]:
-        items = self._list()
-        if not items:
-            raise NewsSourceError("KAP yanıtında bildirim listesi bulunamadı (format değişmiş olabilir)")
+        items = self._items(since, until)
         wanted = set(symbols)
         result = [d for d in parse_items(items, self.name)
                   if d.symbol in wanted and since <= d.published_at.date() <= until]
