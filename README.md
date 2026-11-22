@@ -106,6 +106,9 @@ sabit parametreli sonuçla kıyaslar.
   4. Ertesi günün kararları KAP filtresiyle verilir; gerekçe kartları ve gün sonu raporu Telegram'a gider.
 - Kaçırılan işlem günleri (VPS kapalı kaldıysa) sırayla işlenir. Aynı gün iki kez işlenmez.
 
+Gün sonu raporu ve `/performans`, botun getirisini BIST100 ve TL mevduatıyla kıyaslar. Mevduat
+oranı `settings.yaml` → `deposit` bölümünde; faiz değişince yeni oran tarihiyle eklenir.
+
 Telegram komutları: `/portfoy`, `/neden HISSE`, `/bekleyen`, `/islemler`, `/performans`,
 `/parametreler`, `/haber HISSE`, `/durdur` (yeni alım yok; stop/çıkış çalışır), `/devam`, `/yardim`.
 Bot sadece `TELEGRAM_CHAT_ID` sohbetinden gelen komutlara cevap verir.

@@ -57,3 +57,9 @@ expectations:              # alış mesajındaki "geçmiş benzer işlemler" (bo
   avg_loss_pct: -0.095     # ortalama kayıp %-9.5
   avg_hold_days: 32
   min_own_trades: 20
+
+deposit:                   # mevduat kıyası (bot nakitte durmaktan daha iyi mi?)
+  withholding_tax: 0.175   # stopaj %17,5 (6 aya kadar vade)
+  rates:                   # faiz değişince ALTA yeni satır ekle; eski satırları silme
+    - from: "2026-11-01"
+      gross: 0.38          # 32 gün vadeli TL mevduat, yıllık brüt (Kasım 2026 ortalamasına yakın)

@@ -81,6 +81,13 @@ class ExpectationConfig:
 
 
 @dataclass(frozen=True)
+class DepositConfig:
+    """Mevduat kıyası. rates: [{"from": "YYYY-AA-GG", "gross": yıllık brüt oran}], tarihe göre."""
+    rates: tuple = ({"from": "2026-11-01", "gross": 0.38},)
+    withholding_tax: float = 0.175     # stopaj (6 aya kadar vade)
+
+
+@dataclass(frozen=True)
 class NewsConfig:
     enabled: bool = True
     source: str = "kap_web"        # ileride: matriks
@@ -109,6 +116,7 @@ class Settings:
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
     expectations: ExpectationConfig = field(default_factory=ExpectationConfig)
+    deposit: DepositConfig = field(default_factory=DepositConfig)
 
     def universe(self) -> list[str]:
         symbols = []
@@ -158,6 +166,8 @@ def load_settings(path: str | Path | None = None) -> Settings:
         momentum=MomentumConfig(**strat.get("momentum", {})),
         news=NewsConfig(**raw.get("news", {})),
         expectations=ExpectationConfig(**raw.get("expectations", {})),
+        deposit=DepositConfig(**{k: (tuple(v) if k == "rates" else v)
+                                 for k, v in raw.get("deposit", {}).items()}),
     )
     settings.risk.validate()
     if settings.sizing not in SIZING_MODES:
