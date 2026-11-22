@@ -2,6 +2,7 @@
 
 Zamanlama (Europe/Istanbul, hafta içi):
   09:45  Sabah mesajı: "çalışıyorum" + bugün açılışta gerçekleşecek emirler
+  10:05–18:15  15 dakikada bir gün içi izleme (~15 dk gecikmeli): stop uyarıları, sadece bilgi
   19:00  Akşam işi (kapanış verisi gelmemişse 22:00'a kadar 30 dakikada bir tekrar dener)
 
 Son çalışma tarihleri veritabanında tutulur; süreç yeniden başlasa bile aynı iş iki kez yapılmaz.
@@ -16,6 +17,7 @@ from datetime import datetime, time as dtime, timedelta
 from zoneinfo import ZoneInfo
 
 from .commands import CommandHandler
+from .intraday import IntradayMonitor
 from .runner import LiveRunner
 
 log = logging.getLogger(__name__)
@@ -39,8 +41,9 @@ class Daemon:
         self.notifier = notifier
         self.tz = ZoneInfo(tz)
         self._now = now or (lambda: datetime.now(self.tz))
-        self.commands = CommandHandler(runner, today=lambda: self._now().date())
+        self.commands = CommandHandler(runner, today=lambda: self._now().date(), now=self._now)
         self.db = runner.db
+        self.intraday = IntradayMonitor(runner.db, runner.broker, runner.source, notifier)
 
     # ------------------------------------------------------------------ zamanlama
     def _state(self, key: str) -> str | None:
@@ -52,6 +55,8 @@ class Daemon:
         today = now.date().isoformat()
         if now.weekday() >= 5:
             return
+        if self.intraday.due(now):
+            self.intraday.check(now)
         if now.time() >= MORNING_AT and now.time() < self.evening_at and self._state("morning_done") != today:
             self.db.set_state("morning_done", today)
             self.notifier.send(f"☀️ Günaydın, bot çalışıyor ({now:%d.%m.%Y %H:%M}).\n"

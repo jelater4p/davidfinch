@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from .base import DataSource, normalize
+from .base import DataSource, Quote, normalize
 
 log = logging.getLogger(__name__)
 
@@ -46,4 +46,30 @@ class YahooSource(DataSource):
                 log.warning("%s için veri boş geldi", sym)
                 continue
             out[sym] = df
+        return out
+
+    def fetch_intraday(self, symbols: list[str]) -> dict[str, Quote]:
+        """Bugünün 5 dakikalık mumlarından son fiyat ve gün içi en düşük/en yüksek (~15 dk gecikmeli).
+
+        Gün içi fiyatlar düzeltilmemiş (gerçek) fiyatlardır; bugün için günlük düzeltilmiş
+        fiyatla aynıdır.
+        """
+        import yfinance as yf
+
+        if not symbols:
+            return {}
+        tickers = [s + self.suffix for s in symbols]
+        raw = yf.download(tickers, period="1d", interval="5m", auto_adjust=False,
+                          group_by="ticker", progress=False, threads=True)
+        out: dict[str, Quote] = {}
+        for sym, ticker in zip(symbols, tickers):
+            try:
+                df = raw[ticker] if isinstance(raw.columns, pd.MultiIndex) else raw
+                df = df.rename(columns=str.lower).dropna(subset=["close"])
+            except KeyError:
+                continue
+            if df.empty:
+                continue
+            out[sym] = Quote(sym, df.index[-1].isoformat(), float(df["close"].iloc[-1]),
+                             float(df["low"].min()), float(df["high"].max()))
         return out

@@ -25,6 +25,16 @@ class Bar:
     volume: float
 
 
+@dataclass(frozen=True)
+class Quote:
+    """Gün içi anlık görüntü (Yahoo'da ~15 dk gecikmeli)."""
+    symbol: str
+    time: str        # son mumun zamanı, ISO
+    last: float
+    day_low: float
+    day_high: float
+
+
 class DataSource(ABC):
     @abstractmethod
     def fetch_daily(self, symbols: list[str], start: date, end: date) -> dict[str, pd.DataFrame]:
@@ -32,6 +42,10 @@ class DataSource(ABC):
 
         Fiyatlar bölünme/bedelsiz için düzeltilmiş olmalıdır.
         """
+
+    def fetch_intraday(self, symbols: list[str]) -> dict[str, Quote]:
+        """Bugünün gün içi son fiyatı ve gün içi en düşük/en yüksek. Desteklenmiyorsa boş döner."""
+        return {}
 
 
 def normalize(df: pd.DataFrame) -> pd.DataFrame:

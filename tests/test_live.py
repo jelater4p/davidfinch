@@ -262,3 +262,73 @@ def test_expectation_switches_to_own_stats(setup):
                         (f"S{i}", pnl, pnl / 1000))
     line = expectation_line(db, exp)
     assert "botun kendi 2 işlemi" in line and "kazanma oranı %50" in line and "10 gün" in line
+
+
+# ---------------------------------------------------------------- gün içi izleme
+from bot.data.base import Quote
+from bot.live.intraday import IntradayMonitor, latest_quotes
+
+
+class QuoteSource(FakeSource):
+    def __init__(self, data, quotes):
+        super().__init__(data)
+        self.quotes = quotes
+
+    def fetch_intraday(self, symbols):
+        return {s: q for s, q in self.quotes.items() if s in symbols}
+
+
+def _held(runner, days):
+    runner.broker.submit(OrderRequest("S0", "BUY", 100, days[300], stop_price=1.0, reason={}))
+    runner.evening(days[301])
+    pos = runner.broker.positions()["S0"]
+    return pos
+
+
+def test_intraday_stop_hit_and_near_alerts_once_per_day(setup):
+    runner, data, days, db = setup
+    pos = _held(runner, days)
+    stop = pos.stop_price
+    day = days[302]
+    t = f"{day.isoformat()}T11:00:00+03:00"
+    note = ConsoleNotifier()
+    src = QuoteSource(data, {"S0": Quote("S0", t, stop * 1.01, stop * 1.005, stop * 1.1)})
+    mon = IntradayMonitor(db, runner.broker, src, note)
+    now = datetime(day.year, day.month, day.day, 11, 0, tzinfo=TZ)
+    assert mon.due(now)
+    assert "yaklaştı" in mon.check(now)[0]
+    assert not mon.due(now + pd.Timedelta(minutes=5))          # 15 dk dolmadı
+    later = now + pd.Timedelta(minutes=15)
+    assert mon.check(later) == []                               # aynı gün ikinci "yaklaştı" yok
+    src.quotes["S0"] = Quote("S0", t, stop * 1.01, stop * 0.99, stop * 1.1)
+    alerts = mon.check(later + pd.Timedelta(minutes=15))
+    assert "stop'a değdi" in alerts[0] and "akşam stop fiyatından" in alerts[0]
+    assert runner.broker.positions()["S0"].qty == pos.qty      # işlem yapılmadı, sadece uyarı
+    quotes, checked = latest_quotes(db, later + pd.Timedelta(minutes=20))
+    assert "S0" in quotes and checked
+
+
+def test_intraday_ignores_previous_day_quotes_and_outside_session(setup):
+    runner, data, days, db = setup
+    pos = _held(runner, days)
+    day = days[302]
+    yesterday = f"{days[301].isoformat()}T17:55:00+03:00"
+    note = ConsoleNotifier()
+    src = QuoteSource(data, {"S0": Quote("S0", yesterday, 0.5, 0.1, 1.0)})   # dünün verisi: stop altı
+    mon = IntradayMonitor(db, runner.broker, src, note)
+    assert mon.check(datetime(day.year, day.month, day.day, 10, 5, tzinfo=TZ)) == []
+    assert not mon.due(datetime(day.year, day.month, day.day, 9, 0, tzinfo=TZ))
+    assert not mon.due(datetime(day.year, day.month, day.day, 19, 0, tzinfo=TZ))
+
+
+def test_portfoy_uses_intraday_quotes(setup):
+    runner, data, days, db = setup
+    pos = _held(runner, days)
+    day = days[302]
+    now = datetime(day.year, day.month, day.day, 12, 0, tzinfo=TZ)
+    t = f"{day.isoformat()}T11:55:00+03:00"
+    mon = IntradayMonitor(db, runner.broker, QuoteSource(data, {"S0": Quote("S0", t, 123.45, 120, 125)}),
+                          ConsoleNotifier())
+    mon.check(now)
+    out = CommandHandler(runner, today=lambda: day, now=lambda: now).handle("/portfoy")
+    assert "gün içi 12:00" in out and "123.45" in out and "anlık" in out

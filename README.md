@@ -93,6 +93,10 @@ sabit parametreli sonuçla kıyaslar.
 
 `python -m bot run` sürekli çalışır (Europe/Istanbul, hafta içi):
 - **09:45** sabah mesajı: bot çalışıyor + o gün açılışta gerçekleşecek emirler.
+- **10:05–18:15** 15 dakikada bir gün içi izleme (Yahoo, ~15 dk gecikmeli). Stop'a değen ya da
+  stop'un %2 yakınına gelen pozisyon için uyarı gönderir; `/portfoy` gün içi fiyatı gösterir.
+  **İşlem yapmaz.** Paper satış akşam stop fiyatından kaydedilir; bu, aracı kurumdaki bekleyen bir
+  stop emrinin davranışıyla aynıdır ve sonuçları backtest ile tutarlı tutar.
 - **19:00** akşam işi. Kapanış verisi gelmemişse 22:00'a kadar 30 dakikada bir tekrar dener.
   1. Veri yenilenir. Elde tutulan hissede bedelsiz/bölünme varsa lot, maliyet ve stop uyarlanır.
   2. Ay başıysa frenli parametre güncellemesi yapılır.
