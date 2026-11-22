@@ -1,0 +1,42 @@
+name: Testler
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: Birim testleri
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # Docker imajıyla aynı sürüm
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Bağımlılıkları kur
+        run: pip install -r requirements-dev.txt
+      - name: Testleri çalıştır
+        run: python -m pytest -q
+        env:
+          TZ: Europe/Istanbul
+
+  docker:
+    name: Docker imajı derleniyor mu?
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: İmajı derle
+        run: docker build -t davidfinch:ci .
+      - name: İmaj içinde botun komutları açılıyor mu?
+        run: docker run --rm davidfinch:ci python -m bot --help

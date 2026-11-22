@@ -332,3 +332,11 @@ def test_portfoy_uses_intraday_quotes(setup):
     mon.check(now)
     out = CommandHandler(runner, today=lambda: day, now=lambda: now).handle("/portfoy")
     assert "gün içi 12:00" in out and "123.45" in out and "anlık" in out
+
+
+def test_summary_includes_deposit_comparison(setup):
+    runner, _, days, _ = setup
+    runner.evening(days[300])
+    runner.evening(days[310])
+    text = runner.summary(days[310])
+    assert "Mevduat aynı dönem" in text and "puan" in text

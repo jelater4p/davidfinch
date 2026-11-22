@@ -185,10 +185,19 @@ class LiveRunner:
         if prev:
             lines.append(f"   Günlük: %{100 * (equity / prev['equity'] - 1):+.2f}")
         if first:
-            b0 = self.store.last_close(self.settings.benchmark, date.fromisoformat(first["date"]))
+            from ..benchmarks import deposit_return, net_rate
+
+            start = date.fromisoformat(first["date"])
+            b0 = self.store.last_close(self.settings.benchmark, start)
             b1 = self.store.last_close(self.settings.benchmark, day)
             if b0 and b1:
                 lines.append(f"   BIST100 aynı dönem: %{100 * (b1 / b0 - 1):+.1f}")
+            # Para, ilk işlem gününden bir gün önce mevduata yatırılmış gibi
+            dep = deposit_return(self.settings.deposit, start - timedelta(days=1), day)
+            bot = equity / initial - 1
+            lines.append(f"   Mevduat aynı dönem: %{100 * dep:+.1f} (net yıllık %"
+                         f"{100 * net_rate(self.settings.deposit, day):.1f}) → bot farkı "
+                         f"{100 * (bot - dep):+.1f} puan")
         lines.append(f"   Nakit: {cash:,.0f} TL (%{100 * cash / equity:.0f}) | Pozisyon: {len(positions)}"
                      f"/{self.settings.risk.max_open_positions}")
         return "\n".join(lines)
