@@ -243,8 +243,15 @@ def cmd_evening(args, settings, db) -> None:
 
 
 def cmd_telegram_test(args, settings, db) -> None:
-    _notifier().send("✅ davidfinch: Telegram bağlantısı çalışıyor.")
-    print("Gönderildi.")
+    from .notify.telegram import Telegram
+
+    notifier = _notifier()
+    if not isinstance(notifier, Telegram):
+        raise SystemExit("Telegram yapılandırılmamış: .env içinde TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID olmalı.")
+    if notifier.send("✅ davidfinch: Telegram bağlantısı çalışıyor."):
+        print("Gönderildi. Telefonunuzu kontrol edin.")
+    else:
+        raise SystemExit("GÖNDERİLEMEDİ — yukarıdaki hata satırına bakın.")
 
 
 def main() -> None:
