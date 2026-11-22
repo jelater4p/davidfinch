@@ -5,11 +5,12 @@ UYARI:
     kullandığı veri adresleri kullanılır; bu, KAP'ın izin verdiği bir kullanım
     değildir ve site değişirse kırılabilir. Kullanıcı bunu bilerek seçmiştir.
   * Saygılı kullanım: günde birkaç istek, istekler arası bekleme, önbellek.
-  * Sitenin kendi kodundan: veriler www.kap.org.tr'den değil, sitenin sunucu tarafının
-    kullandığı kapsitebackend.mkk.com.tr'den gelir. Bildirim sorgulama sayfası
-    POST .../api/disclosure/members/byCriteria  gövde: {"fromDate","toDate","memberTypes"}
-    biçimindedir (tarihler GG.AA.YYYY). Tarih aralığıyla sorgu, günün tüm bildirimlerini
-    getirdiği için ana sayfa akışından (list/main) daha güvenilirdir.
+  * Sitenin kendi kodundan: bildirim sorgu formu
+    POST www.kap.org.tr/tr/api/disclosure/members/byCriteria
+    gövde {"fromDate","toDate","disclosureTypes","memberTypes","mkkMemberOid"} gönderir;
+    yanıttaki kayıtlar {"disclosureBasic": {"disclosureIndex": ...}, ...} biçimindedir.
+    Sitenin sunucu tarafının kullandığı kapsitebackend.mkk.com.tr dışarıdan erişilemez.
+    Tarih aralığıyla sorgu, günün tüm bildirimlerini getirdiği için ana akıştan iyidir.
   * Hangi adresin çalıştığı ve yanıt alan adları geliştirme ortamında doğrulanamadı.
     ENDPOINTS sırayla denenir, çalışan hatırlanır. VPS'te `python -m bot kap-check`
     her adayı dener ve ham yanıtı gösterir; alan eşlemesi (FIELD_CANDIDATES) esnektir.
@@ -30,8 +31,8 @@ from .base import Disclosure, NewsSource, NewsSourceError
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://www.kap.org.tr"
-BACKEND_URL = "https://kapsitebackend.mkk.com.tr"     # sitenin SERVER_BASE_URL değeri
 DETAIL_URL = BASE_URL + "/tr/Bildirim/{id}"
+QUERY_URL = BASE_URL + "/tr/api/disclosure/members/byCriteria"
 MEMBER_TYPES = ["IGS", "DDK"]    # sitenin varsayılan şirket filtresi (IGS: işlem gören şirketler)
 
 
@@ -40,24 +41,31 @@ class Endpoint:
     name: str
     method: str          # GET | POST
     url: str
-    dated: bool          # True: tarih aralığıyla sorgu (POST gövdesi)
+    date_format: str | None = None   # None: tarihsiz akış; aksi halde POST gövdesindeki tarih biçimi
+
+    @property
+    def dated(self) -> bool:
+        return self.date_format is not None
 
     def body(self, since: date, until: date) -> dict | None:
         if not self.dated:
             return None
-        return {"fromDate": f"{since:%d.%m.%Y}", "toDate": f"{until:%d.%m.%Y}", "memberTypes": MEMBER_TYPES}
+        # Sitenin bildirim sorgu formunun gönderdiği gövdenin aynısı
+        return {"fromDate": since.strftime(self.date_format), "toDate": until.strftime(self.date_format),
+                "disclosureTypes": None, "memberTypes": MEMBER_TYPES, "mkkMemberOid": None}
 
 
 ENDPOINTS = [
-    Endpoint("sorgu (backend)", "POST", BACKEND_URL + "/tr/api/disclosure/members/byCriteria", True),
-    Endpoint("sorgu (site)", "POST", BASE_URL + "/tr/api/disclosure/members/byCriteria", True),
-    Endpoint("ana akış (backend)", "GET", BACKEND_URL + "/tr/api/disclosure/list/main", False),
-    Endpoint("ana akış (site)", "GET", BASE_URL + "/tr/api/disclosure/list/main", False),
+    Endpoint("sorgu (GG.AA.YYYY)", "POST", QUERY_URL, "%d.%m.%Y"),
+    Endpoint("sorgu (YYYY-AA-GG)", "POST", QUERY_URL, "%Y-%m-%d"),
+    Endpoint("ana akış", "GET", BASE_URL + "/tr/api/disclosure/list/main"),
 ]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; davidfinch-paper-bot)",
     "Accept": "application/json",
     "Accept-Language": "tr",
+    "Origin": BASE_URL,
+    "Referer": BASE_URL + "/tr/bildirim-sorgu",
 }
 MIN_SECONDS_BETWEEN_REQUESTS = 5.0
 LIST_CACHE_SECONDS = 600     # aynı çalıştırmada birden çok hisse sorulsa da liste bir kez çekilir

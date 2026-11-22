@@ -92,6 +92,13 @@ def test_held_alerts():
 
 
 # ---------------------------------------------------------------- KAP ayrıştırma
+def test_kap_parse_disclosure_basic_nesting():
+    item = {"disclosureBasic": {"disclosureIndex": 555, "stockCode": "ASELS", "publishDate": "21.11.2026 09:12",
+                                "title": "ASELSAN", "summary": "Yeni sözleşme"}}
+    d = parse_items([item])[0]
+    assert (d.symbol, d.disclosure_id, d.summary) == ("ASELS", "555", "Yeni sözleşme")
+
+
 def test_kap_parse_flexible_fields():
     payload = {"data": [
         {"disclosureIndex": 123, "stockCodes": "THYAO, PGSUS", "publishDate": "20.11.2026 18:05:00",
@@ -188,7 +195,7 @@ def test_kap_falls_back_and_remembers_working_endpoint(monkeypatch):
     monkeypatch.setattr(kap, "MIN_SECONDS_BETWEEN_REQUESTS", 0)
     item = {"disclosureIndex": 7, "stockCodes": "THYAO", "publishDate": "20.11.2026 18:05:00",
             "subject": "Özel Durum Açıklaması", "title": "THY"}
-    good = kap.ENDPOINTS[2]   # ana akış (backend) çalışıyor, sorgular 405 veriyor
+    good = kap.ENDPOINTS[2]   # ana akış çalışıyor, iki sorgu biçimi de 405 veriyor
     sess = _KapSession({(good.method, good.url): _Resp(200, {"data": [item]})})
     src = kap.KapWebSource(session=sess)
     got = src.fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20))
@@ -205,7 +212,9 @@ def test_kap_dated_query_sends_date_body_and_accepts_empty(monkeypatch):
     ep = kap.ENDPOINTS[0]
     sess = _KapSession({(ep.method, ep.url): _Resp(200, [])})
     assert kap.KapWebSource(session=sess).fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20)) == []
-    assert sess.calls[0][2] == {"fromDate": "18.11.2026", "toDate": "20.11.2026", "memberTypes": ["IGS", "DDK"]}
+    assert sess.calls[0][2] == {"fromDate": "18.11.2026", "toDate": "20.11.2026", "disclosureTypes": None,
+                                "memberTypes": ["IGS", "DDK"], "mkkMemberOid": None}
+    assert kap.ENDPOINTS[1].body(date(2026, 11, 18), date(2026, 11, 20))["fromDate"] == "2026-11-18"
 
 
 def test_kap_all_endpoints_fail_raises(monkeypatch):
