@@ -23,9 +23,10 @@ HELP = """Komutlar:
 
 
 class CommandHandler:
-    def __init__(self, runner: LiveRunner, today=date.today):
+    def __init__(self, runner: LiveRunner, today=date.today, now=None):
         self.r = runner
         self.today = today
+        self._now = now
 
     def handle(self, text: str) -> str:
         parts = text.strip().split()
@@ -52,12 +53,23 @@ class CommandHandler:
         positions = self.r.broker.positions()
         if not positions:
             return "Açık pozisyon yok.\n\n" + self.r.summary(self.today())
-        lines = []
+        from .intraday import latest_quotes
+
+        quotes, checked = latest_quotes(self.r.db, self._now()) if self._now else ({}, "")
+        lines = [f"Fiyatlar: gün içi {checked} (~15 dk gecikmeli)" if quotes else "Fiyatlar: son kapanış"]
+        value = cost = 0.0
         for s, p in sorted(positions.items()):
-            last = self.r.store.last_close(s, self.today()) or p.avg_cost
+            q = quotes.get(s)
+            last = q.last if q else (self.r.store.last_close(s, self.today()) or p.avg_cost)
             days = (self.today() - p.entry_date).days
+            gap = 100 * (last / p.stop_price - 1)
             lines.append(f"{s}: {p.qty} lot | maliyet {p.avg_cost:.2f} → {last:.2f} "
-                         f"(%{100 * (last / p.avg_cost - 1):+.1f}) | stop {p.stop_price:.2f} | {days} gün")
+                         f"(%{100 * (last / p.avg_cost - 1):+.1f}) | stop {p.stop_price:.2f} "
+                         f"(%{gap:.1f} uzakta) | {days} gün")
+            value += p.qty * last
+            cost += p.qty * p.avg_cost
+        if quotes:
+            lines.append(f"Açık pozisyonlar anlık: {value - cost:+,.0f} TL (%{100 * (value / cost - 1):+.1f})")
         return "\n".join(lines) + "\n\n" + self.r.summary(self.today())
 
     def neden(self, args) -> str:
