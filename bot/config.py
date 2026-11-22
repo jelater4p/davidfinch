@@ -69,6 +69,18 @@ class MomentumConfig:
 
 
 @dataclass(frozen=True)
+class ExpectationConfig:
+    """Alış mesajındaki "geçmiş benzer işlemler" satırı. Bot min_own_trades kadar işlem
+    kapatana kadar bu backtest değerleri, sonra kendi gerçek işlemlerinin istatistikleri kullanılır."""
+    source: str = "backtest 2022-2026"
+    win_rate: float = 0.47
+    avg_win_pct: float = 0.252
+    avg_loss_pct: float = -0.095
+    avg_hold_days: float = 32
+    min_own_trades: int = 20
+
+
+@dataclass(frozen=True)
 class NewsConfig:
     enabled: bool = True
     source: str = "kap_web"        # ileride: matriks
@@ -96,6 +108,7 @@ class Settings:
     pullback: StrategyConfig = field(default_factory=StrategyConfig)
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
+    expectations: ExpectationConfig = field(default_factory=ExpectationConfig)
 
     def universe(self) -> list[str]:
         symbols = []
@@ -144,6 +157,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
         pullback=StrategyConfig(**strat.get("pullback", {})),
         momentum=MomentumConfig(**strat.get("momentum", {})),
         news=NewsConfig(**raw.get("news", {})),
+        expectations=ExpectationConfig(**raw.get("expectations", {})),
     )
     settings.risk.validate()
     if settings.sizing not in SIZING_MODES:

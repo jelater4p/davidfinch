@@ -231,3 +231,34 @@ def test_telegram_send_reports_failure_with_hint(caplog):
     assert tg.send("x") is False
     assert "TELEGRAM_BOT_TOKEN geçersiz" in caplog.text
     assert Telegram("T", "1", session=FakeSession([])).send("x") is True
+
+
+def test_trade_messages_for_entry_and_stop_exit(setup):
+    runner, data, days, db = setup
+    d0 = days[300]
+    runner.broker.submit(OrderRequest("S0", "BUY", 100, d0, stop_price=1.0,
+                                      reason={"why": ["Test nedeni"], "hold_while": "Trend sürdükçe"}))
+    res = runner.evening(days[301])
+    buy = next(m for m in res.trade_messages if m.startswith("🟢 ALINDI: S0"))
+    assert "Test nedeni" in buy and "En kötü durum: stop 1.00" in buy and "kazanma oranı %47" in buy
+    runner.broker.update_stop("S0", 10_000)        # bir sonraki gün kesin stop olsun
+    res = runner.evening(days[302])
+    sell = next(m for m in res.trade_messages if "SATILDI: S0" in m)
+    assert "Alış" in sell and "Satış" in sell and "gün" in sell and "Neden:" in sell
+    assert "kâr kilitlendi" in sell or "Zarar durdur" in sell
+    t = db.query_one("SELECT stop_price, highest_close FROM trades")
+    assert t["stop_price"] == 10_000 and t["highest_close"] > 0
+
+
+def test_expectation_switches_to_own_stats(setup):
+    from bot.config import ExpectationConfig
+    from bot.live.trade_notes import expectation_line
+    runner, _, _, db = setup
+    exp = ExpectationConfig(min_own_trades=2)
+    assert "backtest" in expectation_line(db, exp)
+    for i, pnl in enumerate([100.0, -50.0]):
+        db.conn.execute("""INSERT INTO trades (symbol, qty, entry_date, entry_price, exit_date, exit_price,
+                           pnl, pnl_pct, exit_reason) VALUES (?, 1, '2026-01-01', 1, '2026-01-11', 1, ?, ?, 'x')""",
+                        (f"S{i}", pnl, pnl / 1000))
+    line = expectation_line(db, exp)
+    assert "botun kendi 2 işlemi" in line and "kazanma oranı %50" in line and "10 gün" in line

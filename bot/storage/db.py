@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl_pct REAL NOT NULL,
     exit_reason TEXT NOT NULL,
     entry_order_id INTEGER REFERENCES orders(id),
-    exit_order_id INTEGER REFERENCES orders(id)
+    exit_order_id INTEGER REFERENCES orders(id),
+    stop_price REAL,            -- çıkış anındaki stop seviyesi
+    highest_close REAL          -- pozisyonun gördüğü en yüksek kapanış
 );
 
 CREATE TABLE IF NOT EXISTS equity_snapshots (
@@ -114,6 +116,10 @@ class Database:
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(param_history)")}
         if "proposal" not in cols:
             self.conn.execute("ALTER TABLE param_history ADD COLUMN proposal TEXT")
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(trades)")}
+        for col in ("stop_price", "highest_close"):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} REAL")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

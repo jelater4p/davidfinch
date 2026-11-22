@@ -49,3 +49,11 @@ news:                      # KAP filtresi — SADECE ciddi olumsuz haberde alım
   min_confidence: 0.6      # Claude'un "ciddi" kararındaki en düşük güven
   model: claude-opus-5-5
   effort: low              # sınıflandırma için yeterli, maliyeti düşük tutar
+
+expectations:              # alış mesajındaki "geçmiş benzer işlemler" (bot 20 işlem kapatınca kendi istatistiğine geçer)
+  source: backtest 2022-2026
+  win_rate: 0.47           # işlemlerin %47'si kârla kapandı
+  avg_win_pct: 0.252       # ortalama kazanç %+25.2
+  avg_loss_pct: -0.095     # ortalama kayıp %-9.5
+  avg_hold_days: 32
+  min_own_trades: 20
