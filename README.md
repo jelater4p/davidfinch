@@ -1,5 +1,7 @@
 # davidfinch
 
+[![Testler](https://github.com/jelater4p/davidfinch/actions/workflows/tests.yml/badge.svg)](https://github.com/jelater4p/davidfinch/actions/workflows/tests.yml)
+
 BIST100 üzerinde paper (sanal) işlem yapan, kararlarını gerekçelendiren ve
 geçmiş işlemlerinden öğrenerek parametrelerini ayarlayan trade botu.
 
