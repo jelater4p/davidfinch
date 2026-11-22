@@ -117,14 +117,23 @@ def _symbols(value: Any) -> list[str]:
     return []
 
 
-def parse_items(items: Iterable[dict], source: str = "kap_web") -> list[Disclosure]:
+# Aynı anda bu kadardan fazla hisseyi ilgilendiren bildirimler piyasa geneli duyurulardır
+# (ör. MKK'nın "SPK İşlem Yasağı Nedeniyle Pay Duyurusu" listeleri); şirkete özel değildir.
+MAX_SYMBOLS_PER_DISCLOSURE = 3
+
+
+def parse_items(items: Iterable[dict], source: str = "kap_web",
+                max_symbols: int | None = None) -> list[Disclosure]:
     out = []
     for item in items:
         did = _pick(item, "id")
         published = _parse_date(_pick(item, "published"))
         if did is None or published is None:
             continue
-        for sym in _symbols(_pick(item, "symbols")):
+        symbols = _symbols(_pick(item, "symbols"))
+        if max_symbols is not None and len(symbols) > max_symbols:
+            continue
+        for sym in symbols:
             out.append(Disclosure(
                 source=source,
                 disclosure_id=str(did),
@@ -211,7 +220,7 @@ class KapWebSource(NewsSource):
     def fetch(self, symbols: list[str], since: date, until: date) -> list[Disclosure]:
         items = self._items(since, until)
         wanted = set(symbols)
-        result = [d for d in parse_items(items, self.name)
+        result = [d for d in parse_items(items, self.name, max_symbols=MAX_SYMBOLS_PER_DISCLOSURE)
                   if d.symbol in wanted and since <= d.published_at.date() <= until]
         log.info("KAP: %d bildirim alındı, %d tanesi ilgili", len(items), len(result))
         return result
