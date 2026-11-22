@@ -221,3 +221,13 @@ def test_daemon_offset_heartbeat_and_backup(setup, tmp_path):
     assert len(list((tmp_path / "bk").iterdir())) == 1
     d.heartbeat()
     assert (tmp_path / "hb").read_text().startswith(str(day.year))
+
+
+def test_telegram_send_reports_failure_with_hint(caplog):
+    class Failing(FakeSession):
+        def post(self, url, json=None, timeout=None):
+            return FakeResp({"ok": False, "description": "Not Found"})
+    tg = Telegram("BAD", "111", session=Failing([]))
+    assert tg.send("x") is False
+    assert "TELEGRAM_BOT_TOKEN geçersiz" in caplog.text
+    assert Telegram("T", "1", session=FakeSession([])).send("x") is True

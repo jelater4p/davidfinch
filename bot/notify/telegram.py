@@ -35,6 +35,17 @@ def chunk(text: str, size: int = MAX_LEN) -> list[str]:
     return parts or [""]
 
 
+def _hint(error: str) -> str:
+    """Sık görülen Telegram hatalarına Türkçe açıklama ekler."""
+    if "Not Found" in error or "Unauthorized" in error:
+        return " → TELEGRAM_BOT_TOKEN geçersiz (eksik/fazla karakter, başta 'bot' yazılmış ya da token yenilenmiş olabilir)"
+    if "chat not found" in error:
+        return " → TELEGRAM_CHAT_ID yanlış ya da bota henüz /start yazılmamış"
+    if "bot was blocked" in error:
+        return " → Botu Telegram'da engellemişsiniz; engeli kaldırıp /start yazın"
+    return ""
+
+
 @dataclass
 class Update:
     update_id: int
@@ -58,12 +69,16 @@ class Telegram:
             raise RuntimeError(f"Telegram {method} hatası: {data.get('description')}")
         return data["result"]
 
-    def send(self, text: str) -> None:
+    def send(self, text: str) -> bool:
+        """Mesajı gönderir; tüm parçalar gittiyse True döner."""
+        ok = True
         for part in chunk(text):
             try:
                 self._call("sendMessage", chat_id=self.chat_id, text=part, disable_web_page_preview=True)
             except (requests.RequestException, RuntimeError, ValueError) as exc:
-                log.error("Telegram mesajı gönderilemedi: %s", exc)
+                ok = False
+                log.error("Telegram mesajı gönderilemedi: %s%s", exc, _hint(str(exc)))
+        return ok
 
     def poll(self, timeout: int = 25) -> list[Update]:
         """Yeni komutları getirir. Yetkisiz sohbetlerden gelenler sessizce atlanır."""
@@ -92,9 +107,10 @@ class ConsoleNotifier:
     def __init__(self):
         self.sent: list[str] = []
 
-    def send(self, text: str) -> None:
+    def send(self, text: str) -> bool:
         self.sent.append(text)
         print(text, flush=True)
+        return True
 
     def poll(self, timeout: int = 25) -> list[Update]:
         import time
