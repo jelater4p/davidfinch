@@ -92,6 +92,16 @@ def test_held_alerts():
 
 
 # ---------------------------------------------------------------- KAP ayrıştırma
+def test_kap_parse_real_response_shape():
+    # VPS'te KAP'tan gelen gerçek kayıt biçimi (Kasım 2026)
+    item = {"publishDate": "22.11.2026 14:14:09", "fundCode": None, "kapTitle": "ALTINKILIÇ GIDA A.Ş.",
+            "disclosureClass": "ODA", "summary": "İddialara yönelik açıklama", "relatedStocks": None,
+            "subject": "Haber ve Söylentilere İlişkin Açıklama", "disclosureIndex": 1700900, "stockCodes": "ALKLC"}
+    d = parse_items([item])[0]
+    assert (d.symbol, d.disclosure_id, d.title) == ("ALKLC", "1700900", "ALTINKILIÇ GIDA A.Ş.")
+    assert d.published_at == datetime(2026, 11, 22, 14, 14, 9) and d.summary.startswith("İddialara")
+
+
 def test_kap_parse_disclosure_basic_nesting():
     item = {"disclosureBasic": {"disclosureIndex": 555, "stockCode": "ASELS", "publishDate": "21.11.2026 09:12",
                                 "title": "ASELSAN", "summary": "Yeni sözleşme"}}
@@ -212,9 +222,9 @@ def test_kap_dated_query_sends_date_body_and_accepts_empty(monkeypatch):
     ep = kap.ENDPOINTS[0]
     sess = _KapSession({(ep.method, ep.url): _Resp(200, [])})
     assert kap.KapWebSource(session=sess).fetch(["THYAO"], date(2026, 11, 18), date(2026, 11, 20)) == []
-    assert sess.calls[0][2] == {"fromDate": "18.11.2026", "toDate": "20.11.2026", "disclosureTypes": None,
+    assert sess.calls[0][2] == {"fromDate": "2026-11-18", "toDate": "2026-11-20", "disclosureTypes": None,
                                 "memberTypes": ["IGS", "DDK"], "mkkMemberOid": None}
-    assert kap.ENDPOINTS[1].body(date(2026, 11, 18), date(2026, 11, 20))["fromDate"] == "2026-11-18"
+    assert kap.ENDPOINTS[1].body(date(2026, 11, 18), date(2026, 11, 20))["fromDate"] == "18.11.2026"
 
 
 def test_kap_all_endpoints_fail_raises(monkeypatch):
