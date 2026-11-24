@@ -340,3 +340,52 @@ def test_summary_includes_deposit_comparison(setup):
     runner.evening(days[310])
     text = runner.summary(days[310])
     assert "Mevduat aynı dönem" in text and "puan" in text
+
+
+def test_morning_fill_records_entries_and_sends_messages(setup):
+    runner, data, days, db = setup
+    d0, day = days[300], days[301]
+    runner.evening(d0)
+    runner.broker.submit(OrderRequest("S0", "BUY", 50, d0, stop_price=1.0, reason={"why": ["test"]}))
+    t = f"{day.isoformat()}T10:20:00+03:00"
+    runner.source = QuoteSource(data, {"S0": Quote("S0", t, 120.0, 119.0, 121.0, open=118.5)})
+    msgs = runner.morning_fill(day)
+    # açılış 118.50 + %0.1 kayma = 118.62 → BIST fiyat adımına (0.10) yukarı yuvarlanır: 118.70
+    assert any(m.startswith("🟢 ALINDI: S0") and "118.70" in m for m in msgs)
+    assert runner.broker.positions()["S0"].qty == 50
+    res = runner.evening(day)                         # akşam: aynı alış tekrar bildirilmez
+    assert not any("ALINDI: S0" in m for m in res.trade_messages)
+
+
+def test_morning_fill_ignores_previous_day_quotes(setup):
+    runner, data, days, db = setup
+    runner.evening(days[300])
+    runner.broker.submit(OrderRequest("S0", "BUY", 50, days[300], stop_price=1.0, reason={}))
+    old = f"{days[300].isoformat()}T17:55:00+03:00"
+    runner.source = QuoteSource(data, {"S0": Quote("S0", old, 120.0, 119.0, 121.0, open=118.5)})
+    assert runner.morning_fill(days[301]) == [] and "S0" not in runner.broker.positions()
+
+
+def test_daemon_runs_morning_fill_at_1030(setup):
+    runner, data, days, db = setup
+    d0, day = days[300], days[301]
+    runner.evening(d0)
+    runner.broker.submit(OrderRequest("S0", "BUY", 50, d0, stop_price=1.0, reason={}))
+    t = f"{day.isoformat()}T10:20:00+03:00"
+    runner.source = QuoteSource(data, {"S0": Quote("S0", t, 120.0, 119.0, 121.0, open=118.5)})
+    note = ConsoleNotifier()
+    clock = Clock(datetime(day.year, day.month, day.day, 10, 15, tzinfo=TZ))
+    d = Daemon(runner, note, now=clock)
+    d.tick()
+    assert "S0" not in runner.broker.positions()      # 10:30'dan önce dolum yok
+    clock.dt = clock.dt.replace(minute=31)
+    d.tick()
+    assert "S0" in runner.broker.positions() and any("ALINDI: S0" in m for m in note.sent)
+
+
+def test_portfoy_shows_pending_orders(setup):
+    runner, _, days, _ = setup
+    runner.evening(days[300])
+    runner.broker.submit(OrderRequest("S1", "BUY", 10, days[300], stop_price=1.0, reason={}))
+    out = CommandHandler(runner, today=lambda: days[300]).handle("/portfoy")
+    assert "Bekleyen emirler" in out and "AL S1 10 lot" in out

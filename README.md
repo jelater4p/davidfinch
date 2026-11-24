@@ -95,6 +95,9 @@ sabit parametreli sonuçla kıyaslar.
 
 `python -m bot run` sürekli çalışır (Europe/Istanbul, hafta içi):
 - **09:45** sabah mesajı: bot çalışıyor + o gün açılışta gerçekleşecek emirler.
+- **10:30** sabah dolumu: bekleyen emirler bugünün açılış fiyatından kaydedilir (Yahoo gün içi verisi;
+  11:30'a kadar 15 dakikada bir tekrar dener). "🟢 ALINDI" mesajları sabah gelir, `/portfoy` gün içinde dolar.
+  Fiyatı gelmeyen emir akşam işinde dolar. Elle tetiklemek için: `python -m bot morning-fill --send`.
 - **10:05–18:15** 15 dakikada bir gün içi izleme (Yahoo, ~15 dk gecikmeli). Stop'a değen ya da
   stop'un %2 yakınına gelen pozisyon için uyarı gönderir; `/portfoy` gün içi fiyatı gösterir.
   **İşlem yapmaz.** Paper satış akşam stop fiyatından kaydedilir; bu, aracı kurumdaki bekleyen bir

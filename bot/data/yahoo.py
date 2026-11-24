@@ -71,5 +71,5 @@ class YahooSource(DataSource):
             if df.empty:
                 continue
             out[sym] = Quote(sym, df.index[-1].isoformat(), float(df["close"].iloc[-1]),
-                             float(df["low"].min()), float(df["high"].max()))
+                             float(df["low"].min()), float(df["high"].max()), float(df["open"].iloc[0]))
         return out

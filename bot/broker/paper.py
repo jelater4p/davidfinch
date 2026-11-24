@@ -123,24 +123,18 @@ class PaperBroker(Broker):
 
     # ------------------------------------------------------------ seans işleme
     def process_day(self, day: date, bars: dict[str, Bar]) -> list[Fill]:
-        """Bir seansı işler: önce açılış emirleri, sonra stop kontrolü."""
+        """Bir seansı işler: önce açılış emirleri, sonra stop kontrolü.
+
+        Sabah dolumu (fill_at_open) aynı gün daha önce yapıldıysa o emirler zaten FILLED
+        olduğu için burada tekrar dolmaz; sadece kalanlar ve stop'lar işlenir.
+        """
         last = self.last_processed_date()
         if last is not None and day <= last:
             return []   # zaten işlendi (yeniden başlatma güvenliği)
 
-        fills: list[Fill] = []
         with self.db.transaction() as conn:
             self._expire_stale(conn, day)
-            for order in conn.execute(
-                "SELECT * FROM orders WHERE status = 'PENDING' AND decision_date < ? ORDER BY id",
-                (day.isoformat(),),
-            ).fetchall():
-                bar = bars.get(order["symbol"])
-                if bar is None:
-                    continue   # bugün işlem görmedi; emir beklemede kalır
-                fill = (self._fill_buy if order["side"] == "BUY" else self._fill_sell)(conn, order, bar, bars)
-                if fill:
-                    fills.append(fill)
+            fills = self._fill_pending(conn, day, bars)
 
             for pos in conn.execute("SELECT * FROM positions").fetchall():
                 bar = bars.get(pos["symbol"])
@@ -148,6 +142,9 @@ class PaperBroker(Broker):
                     continue
                 if bar.low <= pos["stop_price"]:
                     fills.append(self._stop_out(conn, pos, bar))
+                elif pos["entry_date"] == day.isoformat():
+                    # Bugün (sabah) alınan pozisyon: en yüksek kapanış, sabahki geçici değer değil bugünkü kapanış
+                    conn.execute("UPDATE positions SET highest_close = ? WHERE symbol = ?", (bar.close, pos["symbol"]))
                 else:
                     conn.execute(
                         "UPDATE positions SET highest_close = MAX(highest_close, ?) WHERE symbol = ?",
@@ -155,6 +152,34 @@ class PaperBroker(Broker):
                     )
 
             conn.execute("UPDATE account SET last_processed_date = ? WHERE id = 1", (day.isoformat(),))
+        return fills
+
+    def fill_at_open(self, day: date, opens: dict[str, float]) -> list[Fill]:
+        """Sabah dolumu: bekleyen emirleri bugünün açılış fiyatından gerçekleştirir.
+
+        Stop kontrolü ve gün sonu işlemleri yapılmaz; onlar akşam process_day ile yapılır.
+        Fiyatı gelmeyen hissenin emri beklemede kalır ve akşam işinde dolar.
+        """
+        last = self.last_processed_date()
+        if last is not None and day <= last:
+            return []
+        bars = {s: Bar(s, day, o, o, o, o, 0.0) for s, o in opens.items()}
+        with self.db.transaction() as conn:
+            self._expire_stale(conn, day)
+            return self._fill_pending(conn, day, bars)
+
+    def _fill_pending(self, conn, day: date, bars: dict[str, Bar]) -> list[Fill]:
+        fills: list[Fill] = []
+        for order in conn.execute(
+            "SELECT * FROM orders WHERE status = 'PENDING' AND decision_date < ? ORDER BY id",
+            (day.isoformat(),),
+        ).fetchall():
+            bar = bars.get(order["symbol"])
+            if bar is None:
+                continue   # bugün işlem görmedi / fiyat yok; emir beklemede kalır
+            fill = (self._fill_buy if order["side"] == "BUY" else self._fill_sell)(conn, order, bar, bars)
+            if fill:
+                fills.append(fill)
         return fills
 
     def snapshot(self, day: date, closes: dict[str, float]) -> float:

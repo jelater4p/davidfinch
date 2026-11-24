@@ -225,3 +225,32 @@ def test_price_store_roundtrip(db):
     assert len(store.history("ASELS")) == 2
     assert store.last_close("ASELS", date(2026, 3, 10)) == 11.5
     assert store.bar("ASELS", date(2026, 3, 3)).open == 11.0
+
+
+def test_fill_at_open_then_evening_does_not_double_fill(db):
+    b = PaperBroker(db, RISK, NO_COST)
+    b.submit(buy())
+    fills = b.fill_at_open(date(2026, 3, 3), {"ASELS": 62.0})
+    assert len(fills) == 1 and fills[0].price == 62.0
+    pos = b.positions()["ASELS"]
+    assert pos.qty == 200 and pos.highest_close == 62.0
+    # Akşam: aynı emir tekrar dolmaz, stop kontrolü yapılır, en yüksek kapanış bugünkü kapanış olur
+    evening = b.process_day(date(2026, 3, 3), {"ASELS": bar("ASELS", date(2026, 3, 3), 62, 64, 61, 60.5)})
+    assert evening == [] and b.positions()["ASELS"].highest_close == 60.5
+    assert db.query_one("SELECT COUNT(*) FROM orders WHERE status='FILLED'")[0] == 1
+
+
+def test_fill_at_open_leaves_missing_symbols_pending(db):
+    b = PaperBroker(db, RISK, NO_COST)
+    b.submit(buy())
+    assert b.fill_at_open(date(2026, 3, 3), {}) == []
+    assert len(b.pending_orders()) == 1
+    fills = b.process_day(date(2026, 3, 3), {"ASELS": bar("ASELS", date(2026, 3, 3), 62, 64, 61, 63)})
+    assert len(fills) == 1                       # akşam işi doldurdu
+
+
+def test_fill_at_open_respects_processed_day(db):
+    b = PaperBroker(db, RISK, NO_COST)
+    b.submit(buy())
+    b.process_day(date(2026, 3, 3), {"ASELS": bar("ASELS", date(2026, 3, 3), 62, 64, 61, 63)})
+    assert b.fill_at_open(date(2026, 3, 3), {"ASELS": 99.0}) == []

@@ -33,6 +33,7 @@ class Quote:
     last: float
     day_low: float
     day_high: float
+    open: float | None = None   # günün ilk mumunun açılışı (sabah dolumu için)
 
 
 class DataSource(ABC):

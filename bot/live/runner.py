@@ -171,6 +171,35 @@ class LiveRunner:
                     out.append(note)
         return out
 
+    # ------------------------------------------------------------------ sabah dolumu
+    def morning_fill(self, day: date) -> list[str]:
+        """Bekleyen emirleri bugünün açılış fiyatından (Yahoo gün içi, ~15 dk gecikmeli) gerçekleştirir.
+
+        Akşam işiyle aynı fiyat (açılış) ve aynı kurallar kullanılır; sadece kayıt sabaha çekilir.
+        Fiyatı gelmeyen hissenin emri beklemede kalır, akşam işi onu her zamanki gibi doldurur.
+        """
+        from .trade_notes import entry_note, exit_note
+
+        pending = self.broker.pending_orders()
+        if not pending:
+            return []
+        quotes = self.source.fetch_intraday(sorted({o["symbol"] for o in pending}))
+        opens = {s: q.open for s, q in quotes.items()
+                 if q.open and q.time[:10] == day.isoformat()}     # sadece bugünün mumları
+        fills = self.broker.fill_at_open(day, opens)
+        prices = {s: self.store.last_close(s, day) or 0.0 for s in self.broker.positions()}
+        prices.update(opens)
+        equity = self.broker.equity(prices)
+        msgs = []
+        for f in fills:
+            if f.side == "BUY":
+                msgs.append(entry_note(self.db, f, equity, self.settings.expectations))
+            else:
+                note = exit_note(self.db, f)
+                if note:
+                    msgs.append(note)
+        return msgs
+
     # ------------------------------------------------------------------ rapor
     def summary(self, day: date) -> str:
         positions = self.broker.positions()
