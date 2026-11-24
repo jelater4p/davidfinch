@@ -260,6 +260,17 @@ def cmd_evening(args, settings, db) -> None:
     print(text)
 
 
+def cmd_morning_fill(args, settings, db) -> None:
+    msgs = _runner(settings, db).morning_fill(date.today())
+    if not msgs:
+        print("Doldurulan emir yok (bekleyen emir yok ya da bugünün açılış fiyatı henüz gelmedi).")
+    notifier = _notifier() if args.send else None
+    for m in msgs:
+        print(m + "\n")
+        if notifier:
+            notifier.send(m)
+
+
 def cmd_telegram_test(args, settings, db) -> None:
     from .notify.telegram import Telegram
 
@@ -303,6 +314,8 @@ def main() -> None:
     p_ev.add_argument("--no-fetch", action="store_true", help="Veri çekme, veritabanındakini kullan")
     p_ev.add_argument("--send", action="store_true", help="Sonucu Telegram'a da gönder")
     sub.add_parser("telegram-test", help="Telegram deneme mesajı")
+    p_mf = sub.add_parser("morning-fill", help="Bekleyen emirleri bugünün açılış fiyatından şimdi doldur")
+    p_mf.add_argument("--send", action="store_true", help="Alış/satış mesajlarını Telegram'a da gönder")
     args = parser.parse_args()
     if args.command in ("run", "evening"):
         logging.getLogger().setLevel(logging.INFO)
@@ -313,7 +326,8 @@ def main() -> None:
         {"fetch": cmd_fetch, "status": cmd_status, "backtest": cmd_backtest,
          "walkforward": cmd_walkforward, "learn": cmd_learn,
          "kap-check": cmd_kap_check, "news": cmd_news,
-         "run": cmd_run, "evening": cmd_evening, "telegram-test": cmd_telegram_test}[args.command](args, settings, db)
+         "run": cmd_run, "evening": cmd_evening, "telegram-test": cmd_telegram_test,
+         "morning-fill": cmd_morning_fill}[args.command](args, settings, db)
     finally:
         db.close()
 

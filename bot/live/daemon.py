@@ -2,6 +2,8 @@
 
 Zamanlama (Europe/Istanbul, hafta içi):
   09:45  Sabah mesajı: "çalışıyorum" + bugün açılışta gerçekleşecek emirler
+  10:30  Sabah dolumu: bekleyen emirler bugünün açılış fiyatından kaydedilir (11:30'a kadar
+         15 dakikada bir tekrar dener; fiyatı gelmeyen emir akşam işinde dolar)
   10:05–18:15  15 dakikada bir gün içi izleme (~15 dk gecikmeli): stop uyarıları, sadece bilgi
   19:00  Akşam işi (kapanış verisi gelmemişse 22:00'a kadar 30 dakikada bir tekrar dener)
 
@@ -23,6 +25,9 @@ from .runner import LiveRunner
 log = logging.getLogger(__name__)
 
 MORNING_AT = dtime(9, 45)
+MORNING_FILL_AT = dtime(10, 30)       # Yahoo ~15 dk gecikmeli: açılış mumu bu saatte hazır
+MORNING_FILL_UNTIL = dtime(11, 30)    # fiyatı gelmeyen emirler bundan sonra akşama kalır
+MORNING_FILL_RETRY = timedelta(minutes=15)
 EVENING_AT = dtime(19, 0)
 EVENING_GIVE_UP = dtime(22, 0)
 EVENING_RETRY = timedelta(minutes=30)
@@ -55,6 +60,11 @@ class Daemon:
         today = now.date().isoformat()
         if now.weekday() >= 5:
             return
+        if MORNING_FILL_AT <= now.time() <= MORNING_FILL_UNTIL and self.runner.broker.pending_orders():
+            last_try = self._state("morning_fill_last_try")
+            if not last_try or now - datetime.fromisoformat(last_try) >= MORNING_FILL_RETRY:
+                self.db.set_state("morning_fill_last_try", now.isoformat())
+                self._run_morning_fill(now)
         if self.intraday.due(now):
             self.intraday.check(now)
         if now.time() >= MORNING_AT and now.time() < self.evening_at and self._state("morning_done") != today:
@@ -67,6 +77,17 @@ class Daemon:
                 return
             self.db.set_state("evening_last_try", now.isoformat())
             self._run_evening(now)
+
+    def _run_morning_fill(self, now: datetime) -> None:
+        try:
+            msgs = self.runner.morning_fill(now.date())
+        except Exception:
+            log.exception("Sabah dolumu hata verdi")
+            self.notifier.send("⚠️ Sabah dolumu yapılamadı; emirler akşam işinde gerçekleşecek.\n"
+                               + traceback.format_exc()[-800:])
+            return
+        for msg in msgs:
+            self.notifier.send(msg)
 
     def _run_evening(self, now: datetime) -> None:
         try:

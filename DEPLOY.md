@@ -179,6 +179,7 @@ Bot ilk akşam işini bir sonraki işlem günü 19:00'da yapar. İlk alımlar ay
 | Son loglar | `docker compose logs --tail 100 momentum` |
 | Canlı log izleme | `docker compose logs -f momentum` (çıkış: `Ctrl+C`) |
 | Cüzdan durumu | `docker compose exec momentum python -m bot status` |
+| Sabah dolumunu elle çalıştır | `docker compose exec momentum python -m bot morning-fill --send` |
 | Yeniden başlatma | `docker compose restart momentum` |
 | Durdurma | `docker compose stop momentum` |
 

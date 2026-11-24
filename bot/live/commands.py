@@ -49,10 +49,26 @@ class CommandHandler:
             return f"Komut çalıştırılamadı: {type(exc).__name__}: {exc}"
 
     # ------------------------------------------------------------------
+    def _pending_section(self) -> str:
+        pending = self.r.broker.pending_orders()
+        if not pending:
+            return ""
+        closes = {s: self.r.store.last_close(s, self.today()) or p.avg_cost
+                  for s, p in self.r.broker.positions().items()}
+        equity = self.r.broker.equity(closes)
+        lines = ["⏳ Bekleyen emirler (sıradaki açılışta; tutar son kapanışa göre tahmini):"]
+        for o in pending:
+            price = self.r.store.last_close(o["symbol"], self.today()) or 0.0
+            amount = o["qty"] * price
+            side = "AL" if o["side"] == "BUY" else "SAT"
+            lines.append(f"• {side} {o['symbol']} {o['qty']} lot ≈ {amount:,.0f} TL (portföy payı ~%{100 * amount / equity:.1f})")
+        return "\n".join(lines)
+
     def portfoy(self, args) -> str:
         positions = self.r.broker.positions()
+        pending = self._pending_section()
         if not positions:
-            return "Açık pozisyon yok.\n\n" + self.r.summary(self.today())
+            return "Açık pozisyon yok.\n\n" + (pending + "\n\n" if pending else "") + self.r.summary(self.today())
         from .intraday import latest_quotes
 
         quotes, checked = latest_quotes(self.r.db, self._now()) if self._now else ({}, "")
@@ -70,6 +86,8 @@ class CommandHandler:
             cost += p.qty * p.avg_cost
         if quotes:
             lines.append(f"Açık pozisyonlar anlık: {value - cost:+,.0f} TL (%{100 * (value / cost - 1):+.1f})")
+        if pending:
+            lines += ["", pending]
         return "\n".join(lines) + "\n\n" + self.r.summary(self.today())
 
     def neden(self, args) -> str:
